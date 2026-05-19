@@ -351,8 +351,6 @@ namespace OpenUtau.App.ViewModels {
                 var cacheSize = PathManager.Inst.GetCacheSize();
                 await Dispatcher.UIThread.InvokeAsync(() => {
                     ClearCacheHeader = $"{header} ({cacheSize})";
-                    PlaybackManager.Inst.LiveWaveformCache.Clear();
-                    DocManager.Inst.ExecuteCmd(new WaveformReadyNotification());
                 });
             });
         }
