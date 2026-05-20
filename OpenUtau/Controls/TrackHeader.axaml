@@ -78,7 +78,7 @@
   </UserControl.Resources>
   <Border Margin="1,1,1,1" BorderThickness="1" BorderBrush="{DynamicResource NeutralAccentBrushSemi}" CornerRadius="2">
     <Grid ColumnDefinitions="auto,*,auto" Background="Transparent">
-      <Panel Grid.Column="0" VerticalAlignment="Stretch" Background="Transparent"
+      <Panel Grid.Column="0" VerticalAlignment="Stretch" Background="Transparent" PointerWheelChanged="MoveHandleScrolled"
              PointerMoved="MoveHandleMoved" PointerPressed="MoveHandlePressed" PointerReleased="MoveHandleReleased">
         <Border BorderThickness="0,0,1,1" MaxHeight="101" VerticalAlignment="Top" CornerRadius="0,0,2,0"
                 BorderBrush="{DynamicResource NeutralAccentBrushSemi}" ClipToBounds="True" IsHitTestVisible="false">

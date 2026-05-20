@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using OpenUtau.App.ViewModels;
 using OpenUtau.Core;
 using OpenUtau.Core.Ustx;
@@ -204,8 +205,11 @@ namespace OpenUtau.App.Controls {
             textBox.Focus();
         }
 
-        private void MoveHandlePressed(object? sender, PointerPressedEventArgs e)
-        {
+        private void MoveHandleScrolled(object? sender, PointerWheelEventArgs e) {
+            Dispatcher.UIThread.Post(() => MoveHandleMoved(sender, e));
+        }
+
+        private void MoveHandlePressed(object? sender, PointerPressedEventArgs e) {
             var control = sender as Control;
             var pointer = e.GetCurrentPoint(control);
             if (control != null && pointer.Properties.IsLeftButtonPressed) {
@@ -219,10 +223,10 @@ namespace OpenUtau.App.Controls {
                 Point point = e.GetPosition(canvas);
                 int tracksMaxIdx = DocManager.Inst.Project.tracks.Count - 1;
                 double sizeHidden = Math.Abs(Offset.Y);
-                if (point.Y > 0 && track != null) {
+                if (track != null) {
                     bool isAboveCenter = Canvas.GetTop(this) + TrackHeight / 2 > point.Y;
                     int position = (int) Math.Round((sizeHidden + point.Y - (isAboveCenter ? 0 : TrackHeight)) / TrackHeight);
-                    int idx = tracksMaxIdx < position ? tracksMaxIdx : position;
+                    int idx = Math.Clamp(position, 0, tracksMaxIdx);
 
                     if (track.TrackNo != idx) {
                         DocManager.Inst.StartUndoGroup("command.track.order");
@@ -248,9 +252,9 @@ namespace OpenUtau.App.Controls {
                 Point point = e.GetPosition(canvas);
                 double offset = Math.Abs(Offset.Y);
                 double leftOver = offset % TrackHeight;
-                if (point.Y > 0 && track != null) {
+                if (track != null) {
                     double position = Math.Round((point.Y + leftOver) / TrackHeight) * TrackHeight;
-                    double finalPos = maxHeight < offset + position ? maxHeight - offset : position - leftOver;
+                    double finalPos = Math.Clamp(position - leftOver, -leftOver, maxHeight - offset);
                     Canvas.SetTop(canvas.TrackMover, finalPos);
                 }
             }
