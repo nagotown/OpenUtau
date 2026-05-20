@@ -141,8 +141,15 @@ namespace OpenUtau.Core {
                     Log.Error(e, $"Failed to delete dir {dir}");
                 }
             }
+            OpenUtau.Core.PlaybackManager.Inst.StopPlayback();
             OpenUtau.Core.PlaybackManager.Inst.LiveWaveformCache.Clear();
-            OpenUtau.Core.PlaybackManager.Inst.IsWaveformBlanked = true;
+            if (OpenUtau.Core.DocManager.Inst.Project != null) {
+                foreach (var part in OpenUtau.Core.DocManager.Inst.Project.parts) {
+                    if (part is OpenUtau.Core.Ustx.UVoicePart voicePart) {
+                        voicePart.Mix = null!; 
+                    }
+                }
+            }
             OpenUtau.Core.DocManager.Inst.ExecuteCmd(new OpenUtau.Core.WaveformReadyNotification());
         }
 

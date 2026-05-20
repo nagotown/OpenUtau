@@ -94,10 +94,10 @@ namespace OpenUtau.App.Controls {
                         bool needsAnotherFrame = false;
                         Array.Clear(sampleData, 0, sampleData.Length);
                         
-                        /*if (OpenUtau.Core.PlaybackManager.Inst.StartingToPlay || 
-                            OpenUtau.Core.PlaybackManager.Inst.IsWaveformBlanked || 
-                            part.Mix == null) 
-                        {*/
+                        if (OpenUtau.Core.PlaybackManager.Inst.IsWaveformBlanked) {
+                            // sampleData is already empty, so the screen draws a perfect flat line.
+                        }
+                        else if (OpenUtau.Core.PlaybackManager.Inst.StartingToPlay || part.Mix == null) {
                             foreach (var cacheItem in PlaybackManager.Inst.LiveWaveformCache.Values) {
                                 if (cacheItem.trackNo != part.trackNo) continue;
                                 
@@ -123,11 +123,11 @@ namespace OpenUtau.App.Controls {
                                     sampleData[targetIdx + 1] += scaledSample; 
                                 }
                             }
-                        //} 
-                        //todo: make part.Mix dynamic since it's persistent in the memory
-                        /*else {
+                        }
+                        // THE FINAL MIX 
+                        else {
                             part.Mix.Mix(samplePos, sampleData, 0, sampleCount);
-                        }*/
+                        }
 
                         bool isRendering = PlaybackManager.Inst.StartingToPlay;
                         if (wasRendering && !isRendering) {

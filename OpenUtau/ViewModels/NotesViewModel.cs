@@ -997,6 +997,8 @@ namespace OpenUtau.App.ViewModels {
                 foreach (var phrase in phrases) {
                     PlaybackManager.Inst.LiveWaveformCache.TryRemove(phrase.hash.ToString(), out _);
                 }
+                // can't clear individual phrases :'(
+                Part.Mix = null;
                 DocManager.Inst.ExecuteCmd(new WaveformReadyNotification());
             }
         }
