@@ -109,35 +109,58 @@ namespace OpenUtau.Core.Ustx {
             overlapped = false;
             tailIntrude = 0;
             tailOverlap = 0;
-
             if (Prev != null) {
                 double gapMs = PositionMs - Prev.EndMs;
-                double prevDur = Prev.DurationMs;
+                double prevAttackEnd = Math.Max(0d, -Prev.preutter + Math.Max(Prev.overlap, 5d));
+                double prevUsableDur = Math.Max(0d, Prev.DurationMs - prevAttackEnd);
                 double maxPreutter = autoPreutter;
                 if (gapMs <= 0) {
                     overlapped = true;
-                    if (autoPreutter - autoOverlap > prevDur * 0.5f) {
-                        maxPreutter = prevDur * 0.5f / (autoPreutter - autoOverlap) * autoPreutter;
+                    // Scale down if the current note intrudes into more than 50% of the USABLE space
+                    if (autoPreutter > 0 && autoPreutter - autoOverlap > prevUsableDur * 0.5f) {
+                        maxPreutter = prevUsableDur * 0.5f / (autoPreutter - autoOverlap) * autoPreutter;
                     }
                 } else if (gapMs < autoPreutter) {
                     maxPreutter = gapMs;
                 }
-                if (autoPreutter > maxPreutter) {
+                if (autoPreutter > maxPreutter && autoPreutter > 0) {
                     double ratio = maxPreutter / autoPreutter;
                     autoPreutter = maxPreutter;
                     autoOverlap *= ratio;
                 }
-                if (autoPreutter > prevDur && overlapped) {
-                    double delta = autoPreutter - prevDur;
-                    autoPreutter = prevDur; // Ensure autoPreutter doesn't exceed 100% of prevDur
+                // HARD WALL: Prevent the next note from EVER crossing Prev's top-left point
+                if (autoPreutter > prevUsableDur && overlapped && autoPreutter > 0) {
+                    double delta = autoPreutter - prevUsableDur;
+                    autoPreutter = prevUsableDur; 
                     autoOverlap -= delta;
                 }
             }
-            preutter = Math.Max(0, autoPreutter + (preutterDelta ?? 0));
+            preutter = autoPreutter + (preutterDelta ?? 0);
             overlap = autoOverlap + (overlapDelta ?? 0);
+            // Prevent self-destruction of this note if it has a negative preutter
+            if (preutter < 0) {
+                double maxDelay = DurationMs * 0.5; // Reserve at least 50% for its own tail
+                if (-preutter > maxDelay) {
+                    double ratio = maxDelay / -preutter;
+                    preutter = -maxDelay;
+                    overlap *= ratio;
+                }
+            }
             if (Prev != null) {
-                Prev.tailIntrude = overlapped ? Math.Max(preutter, preutter - overlap) : 0;
-                Prev.tailOverlap = overlapped ? Math.Max(overlap, 0) : 0;
+                if (overlapped) {
+                    if (preutter < 0) {
+                        // Dynamic pushback: pass negative preutter natively to push the tail forward
+                        Prev.tailIntrude = preutter; 
+                        Prev.tailOverlap = Math.Max(overlap, 5d);
+                    } else {
+                        // Standard positive preutter logic
+                        Prev.tailIntrude = Math.Max(0d, Math.Max(preutter, preutter - overlap));
+                        Prev.tailOverlap = Math.Max(overlap, 0d);
+                    }
+                } else {
+                    Prev.tailIntrude = 0d;
+                    Prev.tailOverlap = 0d;
+                }
                 Prev.ValidateEnvelope(project, track, Prev.Parent);
             }
         }
