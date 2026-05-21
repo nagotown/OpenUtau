@@ -31,6 +31,12 @@ namespace OpenUtau.App.ViewModels {
             this.allmute = allmute;
         }
     }
+    public class TrackSelectionEvent {
+        public readonly UTrack[] selectedTracks;
+        public TrackSelectionEvent(UTrack[] selectedTracks) {
+            this.selectedTracks = selectedTracks;
+        }
+    }
     public class PartsSelectionEvent {
         public readonly UPart[] selectedParts;
         public readonly UPart[] tempSelectedParts;
@@ -60,6 +66,7 @@ namespace OpenUtau.App.ViewModels {
         [Reactive] public double TickOffset { get; set; }
         [Reactive] public double TrackOffset { get; set; }
         [Reactive] public int SnapDiv { get; set; }
+        [Reactive] public int SnapUnit { get; set; }
         public ObservableCollectionExtended<int> SnapTicks { get; } = new ObservableCollectionExtended<int>();
         [Reactive] public double PlayPosX { get; set; }
         [Reactive] public double PlayPosHighlightX { get; set; }
@@ -93,6 +100,7 @@ namespace OpenUtau.App.ViewModels {
         private readonly ObservableAsPropertyHelper<double> smallChangeY;
 
         public readonly List<UPart> SelectedParts = new List<UPart>();
+        public readonly List<UTrack> SelectedTracks = new List<UTrack>();
         private readonly HashSet<UPart> TempSelectedParts = new HashSet<UPart>();
 
         public TracksViewModel() {
@@ -139,6 +147,11 @@ namespace OpenUtau.App.ViewModels {
                 out int ticks,
                 out int div);
             SnapDiv = div;
+            int snapUnit = Project.resolution * 4 / SnapDiv;
+            while (snapUnit * TickWidth < ViewConstants.MinTicklineWidth) {
+                snapUnit *= 2; // Avoid drawing too dense.
+            }
+            SnapUnit = snapUnit;
         }
 
         public void OnXZoomed(Point position, double delta) {
@@ -161,7 +174,7 @@ namespace OpenUtau.App.ViewModels {
         public void OnYZoomed(Point position, double delta) {
             double trackHeight = TrackHeight + Math.Sign(delta) * ViewConstants.TrackHeightDelta;
             trackHeight = Math.Clamp(trackHeight, ViewConstants.TrackHeightMin, ViewConstants.TrackHeightMax);
-            trackHeight = Math.Max(trackHeight, Bounds.Height / TrackCount);
+            trackHeight = Math.Max(trackHeight, TrackCount);
             TrackHeight = trackHeight;
             TrackOffset = Math.Clamp(TrackOffset, 0, VScrollBarMax);
             Notify();
@@ -181,22 +194,28 @@ namespace OpenUtau.App.ViewModels {
         }
 
         public void TickToLineTick(int tick, out int left, out int right) {
-            if (SnapTicks.Count == 0) {
-                left = 0;
-                right = Project.resolution;
+            if(tick < 0 || SnapUnit <= 0){
+                left = right = 0;
                 return;
             }
-            int index = SnapTicks.BinarySearch(tick);
-            if (index < 0) {
-                index = ~index - 1;
+            double minLineTick = ViewConstants.MinTicklineWidth / TickWidth;
+            var timeSig = Project.timeAxis.TimeSignatureAtTick(tick);
+            Project.timeAxis.TickPosToBarBeat(tick, out int bar, out int beat, out int remainingTicks);
+            int barTick = Project.timeAxis.BarBeatToTickPos(bar, 0);
+            int nextBarTick = Project.timeAxis.BarBeatToTickPos(bar + 1, 0);
+            int ticksPerBeat = Project.resolution * 4 * timeSig.beatPerBar / timeSig.beatUnit;
+            int ticksPerLine = SnapUnit;
+            if (ticksPerBeat < SnapUnit) {
+                ticksPerLine = ticksPerBeat;
+            } else if (ticksPerBeat % SnapUnit != 0) {
+                if (ticksPerBeat > minLineTick) {
+                    ticksPerLine = ticksPerBeat;
+                } else {
+                    ticksPerLine = nextBarTick - barTick;
+                }
             }
-            if (0 >= SnapTicks.Count - 2) {
-                left = right = tick;
-                return;
-            }
-            index = Math.Clamp(index, 0, SnapTicks.Count - 2);
-            left = SnapTicks[index];
-            right = SnapTicks[index + 1];
+            left = barTick + (tick - barTick) / ticksPerLine * ticksPerLine;
+            right = left + ticksPerLine;
         }
 
         public void PointToLineTick(Point point, out int left, out int right) {
@@ -220,7 +239,7 @@ namespace OpenUtau.App.ViewModels {
 
         public void AddTrack() {
             var project = DocManager.Inst.Project;
-            DocManager.Inst.StartUndoGroup();
+            DocManager.Inst.StartUndoGroup("command.track.add");
             DocManager.Inst.ExecuteCmd(new AddTrackCommand(project, new UTrack(project) { TrackNo = project.tracks.Count() }));
             DocManager.Inst.EndUndoGroup();
         }
@@ -239,7 +258,7 @@ namespace OpenUtau.App.ViewModels {
                 trackNo = trackNo,
                 Duration = durTick,
             };
-            DocManager.Inst.StartUndoGroup();
+            DocManager.Inst.StartUndoGroup("command.part.add");
             DocManager.Inst.ExecuteCmd(new AddPartCommand(project, part));
             DocManager.Inst.EndUndoGroup();
             return part;
@@ -251,6 +270,44 @@ namespace OpenUtau.App.ViewModels {
             MessageBus.Current.SendMessage(
                 new PartsSelectionEvent(
                     SelectedParts.ToArray(), TempSelectedParts.ToArray()));
+        }
+
+        public void DeselectTracks() {
+            SelectedTracks.Clear();
+            MessageBus.Current.SendMessage(new TrackSelectionEvent(SelectedTracks.ToArray()));
+        }
+
+        public void SelectTrack(UTrack track) {
+            if (SelectedTracks.Count == 1 && SelectedTracks[0] == track) {
+                return;
+            }
+            SelectedTracks.Clear();
+            SelectedTracks.Add(track);
+            MessageBus.Current.SendMessage(new TrackSelectionEvent(SelectedTracks.ToArray()));
+        }
+
+        public void ToggleSelectTrack(UTrack track) {
+            if (SelectedTracks.Contains(track)) {
+                SelectedTracks.Remove(track);
+            } else {
+                SelectedTracks.Add(track);
+            }
+            MessageBus.Current.SendMessage(new TrackSelectionEvent(SelectedTracks.ToArray()));
+        }
+
+        public void SelectTracksUntil(UTrack track) {
+            if (SelectedTracks.Count == 0) {
+                SelectTrack(track);
+                return;
+            }
+            int start = SelectedTracks.Min(selected => selected.TrackNo);
+            int end = track.TrackNo;
+            if (start > end) {
+                (start, end) = (end, start);
+            }
+            SelectedTracks.Clear();
+            SelectedTracks.AddRange(Project.tracks.Where(t => start <= t.TrackNo && t.TrackNo <= end));
+            MessageBus.Current.SendMessage(new TrackSelectionEvent(SelectedTracks.ToArray()));
         }
 
         public void SelectPart(UPart part) {
@@ -297,7 +354,7 @@ namespace OpenUtau.App.ViewModels {
             if (SelectedParts.Count <= 0) {
                 return;
             }
-            DocManager.Inst.StartUndoGroup();
+            DocManager.Inst.StartUndoGroup("command.part.delete");
             var selectedParts = SelectedParts.ToArray();
             foreach (var part in selectedParts) {
                 DocManager.Inst.ExecuteCmd(new RemovePartCommand(Project, part));
@@ -315,7 +372,7 @@ namespace OpenUtau.App.ViewModels {
         public void CutParts() {
             if (SelectedParts.Count > 0) {
                 DocManager.Inst.PartsClipboard = SelectedParts.Select(part => part.Clone()).ToList();
-                DocManager.Inst.StartUndoGroup();
+                DocManager.Inst.StartUndoGroup("command.part.delete");
                 var toRemove = new List<UPart>(SelectedParts);
                 SelectedParts.Clear();
                 foreach (var part in toRemove) {
@@ -341,7 +398,7 @@ namespace OpenUtau.App.ViewModels {
                 }
                 part.trackNo = newTrackNo;
             }
-            DocManager.Inst.StartUndoGroup();
+            DocManager.Inst.StartUndoGroup("command.part.paste");
             while (Project.tracks.Count <= newTrackNo) {
                 DocManager.Inst.ExecuteCmd(new AddTrackCommand(Project, new UTrack(Project) {
                     TrackNo = Project.tracks.Count,
@@ -372,11 +429,10 @@ namespace OpenUtau.App.ViewModels {
 
         public void OnNext(UCommand cmd, bool isUndo) {
             if (cmd is NoteCommand noteCommand) {
-                if (noteCommand is ResizeNoteCommand) {
+                if (noteCommand is ResizeNoteCommand || noteCommand is AddNoteCommand) {
                     MessageBus.Current.SendMessage(new PartRefreshEvent(noteCommand.Part));
-                } else {
-                    MessageBus.Current.SendMessage(new PartRedrawEvent(noteCommand.Part));
                 }
+                MessageBus.Current.SendMessage(new PartRedrawEvent(noteCommand.Part));
             } else if (cmd is PartCommand partCommand) {
                 if (partCommand is AddPartCommand) {
                     if (!isUndo) {
@@ -413,19 +469,23 @@ namespace OpenUtau.App.ViewModels {
                 } else if (cmd is RemoveTrackCommand removeTrack) {
                     if (!isUndo) {
                         Tracks.Remove(removeTrack.track);
+                        SelectedTracks.Remove(removeTrack.track);
                     } else {
                         Tracks.Add(removeTrack.track);
                     }
                 }
                 Notify();
                 MessageBus.Current.SendMessage(new TracksRefreshEvent());
+                MessageBus.Current.SendMessage(new TrackSelectionEvent(SelectedTracks.ToArray()));
             } else if (cmd is UNotification) {
                 if (cmd is LoadProjectNotification loadProjectNotif) {
                     Parts.Clear();
                     Parts.AddRange(loadProjectNotif.project.parts);
                     Tracks.Clear();
                     Tracks.AddRange(loadProjectNotif.project.tracks);
+                    SelectedTracks.Clear();
                     MessageBus.Current.SendMessage(new TracksRefreshEvent());
+                    MessageBus.Current.SendMessage(new TrackSelectionEvent(SelectedTracks.ToArray()));
                 } else if (cmd is SetPlayPosTickNotification setPlayPosTick) {
                     SetPlayPos(setPlayPosTick.playPosTick, setPlayPosTick.waitingRendering);
                     if (!setPlayPosTick.pause || Preferences.Default.LockStartTime == 1) {
@@ -435,6 +495,9 @@ namespace OpenUtau.App.ViewModels {
                     if (SelectedParts.Count != 1 || SelectedParts.First() != loadPartNotif.part) {
                         DeselectParts();
                         SelectPart(loadPartNotif.part);
+                    }
+                    if (0 <= loadPartNotif.part.trackNo && loadPartNotif.part.trackNo < Project.tracks.Count) {
+                        SelectTrack(Project.tracks[loadPartNotif.part.trackNo]);
                     }
                 }
                 Notify();

@@ -3,12 +3,16 @@ using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
 using OpenUtau.App.ViewModels;
+using OpenUtau.Core;
 using OpenUtau.Core.Ustx;
 using ReactiveUI;
 
 namespace OpenUtau.App.Controls {
     class PhonemeCanvas : Control {
+        private static readonly IPen ErrorPen = new Pen(Brushes.Red, 1);
+
         public static readonly DirectProperty<PhonemeCanvas, IBrush> BackgroundProperty =
             AvaloniaProperty.RegisterDirect<PhonemeCanvas, IBrush>(
                 nameof(Background),
@@ -97,6 +101,7 @@ namespace OpenUtau.App.Controls {
             if (Part == null || !ShowPhoneme) {
                 return;
             }
+            string langCode = PhonemeUIRender.getLangCode(Part);
             var viewModel = ((PianoRollViewModel?)DataContext)?.NotesViewModel;
             if (viewModel == null) {
                 return;
@@ -161,21 +166,15 @@ namespace OpenUtau.App.Controls {
                 if (viewModel.TickWidth > ViewConstants.PianoRollTickWidthShowDetails) {
                     string phonemeText = !string.IsNullOrEmpty(phoneme.phonemeMapped) ? phoneme.phonemeMapped : phoneme.phoneme;
                     if (!string.IsNullOrEmpty(phonemeText)) {
-                        var bold = phoneme.rawPhoneme != phoneme.phoneme;
-                        var textLayout = TextLayoutCache.Get(phonemeText, ThemeManager.ForegroundBrush!, 12, bold);
-                        if (x < lastTextEndX) {
-                            raiseText = !raiseText;
-                        } else {
-                            raiseText = false;
-                        }
-                        double textY = raiseText ? 2 : 18;
-                        var size = new Size(textLayout.Width + 4, textLayout.Height - 2);
-                        using (var state = context.PushTransform(Matrix.CreateTranslation(x + 2, textY))) {
-                            var pen = mouseoverPhoneme == phoneme ? ThemeManager.AccentPen1Thickness2 : ThemeManager.NeutralAccentPenSemi;
+                        (double textX, double textY, Size size, TextLayout textLayout) 
+                        = PhonemeUIRender.AliasPosition(viewModel, phoneme, langCode, ref lastTextEndX, ref raiseText);
+                        using (var state = context.PushTransform(Matrix.CreateTranslation(textX + 2, textY))) {
+                            var pen = mouseoverPhoneme == phoneme ? ThemeManager.AccentPen1Thickness2
+                                : phoneme.Error ? ErrorPen
+                                : ThemeManager.NeutralAccentPenSemi;
                             context.DrawRectangle(ThemeManager.BackgroundBrush, pen, new Rect(new Point(-2, 1.5), size), 4, 4);
                             textLayout.Draw(context, new Point());
                         }
-                        lastTextEndX = x + size.Width;
                     }
                 }
             }

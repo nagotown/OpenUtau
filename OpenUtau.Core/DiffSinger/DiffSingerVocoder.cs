@@ -21,18 +21,22 @@ namespace OpenUtau.Core.DiffSinger {
         public string mel_scale => config.mel_scale;
         public bool pitch_controllable => config.pitch_controllable;
 
-        //Get vocoder by package name
-        public DsVocoder(string name) {
+        public DsVocoder(string location) {
             byte[] model;
             try {
-                Location = Path.Combine(PathManager.Inst.DependencyPath, name);
+                Location = location;
                 config = Core.Yaml.DefaultDeserializer.Deserialize<DsVocoderConfig>(
                     File.ReadAllText(Path.Combine(Location, "vocoder.yaml"),
                         System.Text.Encoding.UTF8));
                 model = File.ReadAllBytes(Path.Combine(Location, config.model));
             }
             catch (Exception ex) {
-                throw new MessageCustomizableException($"Error loading vocoder {name}", $"<translate:errors.diffsinger.downloadvocoder1>{name}<translate:errors.diffsinger.downloadvocoder2>https://github.com/xunmengshe/OpenUtau/wiki/Vocoders", new Exception($"Error loading vocoder {name}"));
+                throw new MessageCustomizableException(
+                    $"Error loading vocoder from \"{location}\"",
+                    $"<translate:errors.diffsinger.downloadvocoder>",
+                    ex,
+                    true,
+                    new string[] { Path.GetFileName(location), "https://github.com/xunmengshe/OpenUtau/wiki/Vocoders" });
             }
             hash = XXH64.DigestOf(model);
             session = Onnx.getInferenceSession(model);

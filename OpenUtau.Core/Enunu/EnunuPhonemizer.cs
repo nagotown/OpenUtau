@@ -6,6 +6,7 @@ using System.Text;
 using K4os.Hash.xxHash;
 using OpenUtau.Api;
 using OpenUtau.Core.Ustx;
+using Serilog;
 
 namespace OpenUtau.Core.Enunu {
     [Phonemizer("Enunu Phonemizer", "ENUNU")]
@@ -48,6 +49,7 @@ namespace OpenUtau.Core.Enunu {
             var enunuNotes = NoteGroupsToEnunu(notes);
             var voicebankNameHash = $"{this.singer.voicebankNameHash:x16}";
             if (!File.Exists(scorePath) || !File.Exists(timingPath)) {
+                Log.Information(this.singer.Name + ":" + voicebankNameHash);
                 EnunuUtils.WriteUst(enunuNotes, bpm, singer, ustPath);
                 var response = EnunuClient.Inst.SendRequest<TimingResponse>(new string[] { "timing", ustPath,"", voicebankNameHash, "600" }, port);
                 if (response.error != null) {
@@ -162,13 +164,10 @@ namespace OpenUtau.Core.Enunu {
                     }).ToArray(),
                 };
             }
-            return new Result {
-                phonemes = new Phoneme[] {
-                    new Phoneme {
-                        phoneme = "error",
-                    }
-                },
-            };
+            if (SetUpException != null) {
+                throw new Exception("Phonemizer failed to process.", SetUpException);
+            }
+            throw new Exception("Part result not found");
         }
 
         public override void CleanUp() {
