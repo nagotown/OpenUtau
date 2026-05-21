@@ -510,6 +510,9 @@ namespace OpenUtau.Plugin.Builtin {
                         cc1 = $"{cc[i]} {string.Join("", cc.Skip(i + 1))}";
                         lastC = i;
                     }
+                    if (liquid.Contains(cc[i + 1]) || semivowel.Contains(cc[i + 1])) {
+                        glides(cc1);
+                    }
                     // CV
                 } else if (CurrentWordCc.Length == 1 && PreviousWordCc.Length == 1) {
                     basePhoneme = (AliasFormat($"{cc.Last()} {v}", "dynMid", syllable.vowelTone, ""));
@@ -570,6 +573,9 @@ namespace OpenUtau.Plugin.Builtin {
                         // [C1 C2C3]
                         if (!phoneticHint && (HasOto($"{cc[i]} {string.Join("", cc.Skip(i + 1))}", syllable.tone))) {
                             cc1 = $"{cc[i]} {string.Join("", cc.Skip(i + 1))}";
+                        }
+                        if (liquid.Contains(cc[i + 1]) || semivowel.Contains(cc[i + 1])) {
+                            glides(cc1);
                         }
                         // CV
                     } else if (CurrentWordCc.Length == 1 && PreviousWordCc.Length == 1) {

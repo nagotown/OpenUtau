@@ -442,6 +442,9 @@ namespace OpenUtau.Plugin.Builtin {
                     if (HasOto(AliasFormat($"{string.Join("", cc.Skip(i + 1))}", "cc", syllable.tone, ""), syllable.vowelTone)) {
                         cc1 = AliasFormat($"{string.Join("", cc.Skip(i + 1))}", "cc", syllable.tone, "");
                     }
+                    if (liquid.Contains(cc[i + 1]) || semivowel.Contains(cc[i + 1])) {
+                        glides(cc1);
+                    }
                     // CV
                 } else if (syllable.CurrentWordCc.Length == 1 && syllable.PreviousWordCc.Length == 1) {
                     basePhoneme = AliasFormat(v, "cv", syllable.vowelTone, "");
@@ -473,6 +476,9 @@ namespace OpenUtau.Plugin.Builtin {
                         // [C2C3]
                         if (HasOto(AliasFormat($"{string.Join("", cc.Skip(i + 1))}", "cc", syllable.tone, ""), syllable.vowelTone)) {
                             cc1 = AliasFormat($"{string.Join("", cc.Skip(i + 1))}", "cc", syllable.tone, "");
+                        }
+                        if (liquid.Contains(cc[i + 1]) || semivowel.Contains(cc[i + 1])) {
+                            glides(cc1);
                         }
                         // CV
                     } else if (syllable.CurrentWordCc.Length == 1 && syllable.PreviousWordCc.Length == 1) {

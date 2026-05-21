@@ -159,6 +159,8 @@ namespace OpenUtau.Plugin.Builtin {
             if (hasDictionary && isDictionaryLoading) {
                 return MakeSimpleResult("");
             }
+            
+            runtimeGlides.Clear();
 
             var syllables = MakeSyllables(notes, MakeEnding(prevNeighbours));
             if (syllables == null) {
@@ -362,6 +364,7 @@ namespace OpenUtau.Plugin.Builtin {
                             vowels = backupVowels.Concat(yamlVowels).Distinct().ToArray();
 
                             tails = (tails ?? Array.Empty<string>()).Concat(data.symbols?.Where(s => s.type == "tail").Select(s => s.symbol) ?? Array.Empty<string>()).Distinct().ToArray();
+                            enableGlides = data?.isglides ?? true;
                             
                             fricative = data.symbols?.Where(s => s.type == "fricative").Select(s => s.symbol).Distinct().ToArray() ?? Array.Empty<string>();
                             aspirate = data.symbols?.Where(s => s.type == "aspirate").Select(s => s.symbol).Distinct().ToArray() ?? Array.Empty<string>();
@@ -436,6 +439,20 @@ namespace OpenUtau.Plugin.Builtin {
         private readonly string[] wordSeparator = new[] { "  " };
 
         /// <summary>
+        /// A tracker to identify which phonemes were marked as glides dynamically.
+        /// </summary>
+        protected HashSet<string> runtimeGlides = new HashSet<string>();
+
+        /// <summary>
+        /// Flag a specific generated string as a glide during your ProcessSyllable / ProcessEnding loops.
+        /// </summary>
+        protected void glides(string alias) {
+            runtimeGlides.Add(alias);
+        }
+
+        protected bool enableGlides = true;
+
+        /// <summary>
         /// Returns list of vowels
         /// </summary>
         /// <returns></returns>
@@ -504,7 +521,6 @@ namespace OpenUtau.Plugin.Builtin {
                 foreach (var subword in note.lyric.Trim().ToLowerInvariant().Split(wordSeparators, StringSplitOptions.RemoveEmptyEntries)) {
                     var subResult = dictionary.Query(subword);
                     if (subResult == null) {
-                        //Log.Warning($"Subword '{subword}' from word '{note.lyric}' can't be found in the dictionary");
                         subResult = HandleWordNotFound(note);
                         if (subResult == null) {
                             return null;
@@ -529,10 +545,10 @@ namespace OpenUtau.Plugin.Builtin {
 
         /// <summary>
         /// Defines whether a consonant (like a liquid or semi-vowel etc) should be placed ON the note (anchor)
-        /// instead of pushing backward.
+        /// instead of pushing backward. Will return true if dynamically flagged using glides() or TryAddPhoneme().
         /// </summary>
         protected virtual bool IsGlide(string alias) {
-            return false;
+            return runtimeGlides.Contains(alias) && enableGlides;
         }
 
         protected virtual bool NoGap => true;
@@ -900,6 +916,20 @@ namespace OpenUtau.Plugin.Builtin {
         }
 
         /// <summary>
+        /// Appends a phoneme and optionally marks it as a glide simultaneously.
+        /// </summary>
+        protected bool TryAddPhoneme(List<string> sourcePhonemes, int tone, bool isGlide, params string[] targetPhonemes) {
+            foreach (var phoneme in targetPhonemes) {
+                if (HasOto(phoneme, tone)) {
+                    sourcePhonemes.Add(phoneme);
+                    if (isGlide) glides(phoneme);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// if true, you can put phoneme as null so the previous alias will be extended
         /// </summary>
         /// <param name="syllable"></param>
@@ -957,6 +987,7 @@ namespace OpenUtau.Plugin.Builtin {
 
         public class YAMLData {
             public string version { get; set; }
+            public bool? isglides { get; set; }
             public SymbolData[] symbols { get; set; } = Array.Empty<SymbolData>();
             public Replacement[] replacements { get; set; } = Array.Empty<Replacement>();
             public Fallbacks[] fallbacks { get; set; } = Array.Empty<Fallbacks>();
