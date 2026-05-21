@@ -718,8 +718,12 @@ namespace OpenUtau.Classic {
             if (manifest != null && manifest.expressions != null) expressions.AddRange(manifest.expressions.Values);
 
             if (singer != null && singer.Subbanks != null) {
-                var uniqueColors = new HashSet<string>();
-                foreach (var sub in singer.Subbanks) if (!string.IsNullOrEmpty(sub.Color)) uniqueColors.Add(sub.Color);
+                var uniqueColors = new List<string>();
+                foreach (var sub in singer.Subbanks) {
+                    if (!string.IsNullOrEmpty(sub.Color) && !uniqueColors.Contains(sub.Color)) {
+                        uniqueColors.Add(sub.Color);
+                    }
+                }
                 int colorIndex = 1;
                 foreach (var colorName in uniqueColors) {
                     expressions.Add(new UExpressionDescriptor { name = $"voice color {colorIndex:D2} {colorName}", abbr = $"cl{colorIndex:D2}", type = UExpressionType.MorphingCurve, min = 0, max = 100, defaultValue = 0, isFlag = false, flag = "" });
@@ -727,6 +731,33 @@ namespace OpenUtau.Classic {
                 }
             }
             return expressions.ToArray();
+        }
+
+        private string GetMatchedColor(USinger singer, UExpressionDescriptor exp) {
+            if (singer == null || singer.Subbanks == null) return null;
+            
+            var uniqueColors = new List<string>();
+            foreach (var sub in singer.Subbanks) {
+                if (!string.IsNullOrEmpty(sub.Color) && !uniqueColors.Contains(sub.Color)) {
+                    uniqueColors.Add(sub.Color);
+                }
+            }
+
+            if (exp.abbr.StartsWith("cl") && exp.abbr.Length >= 3 && int.TryParse(exp.abbr.Substring(2), out int idx)) {
+                if (idx > 0 && idx <= uniqueColors.Count) {
+                    return uniqueColors[idx - 1];
+                }
+            }
+
+            foreach (var cName in uniqueColors) {
+                if (exp.name.Equals(cName, StringComparison.OrdinalIgnoreCase) ||
+                    exp.name.EndsWith(" " + cName, StringComparison.OrdinalIgnoreCase) ||
+                    exp.name.StartsWith(cName + " ", StringComparison.OrdinalIgnoreCase) ||
+                    exp.name.IndexOf(" " + cName + " ", StringComparison.OrdinalIgnoreCase) >= 0) {
+                    return cName;
+                }
+            }
+            return null;
         }
 
         public override string ToString() => Renderers.CLASSIC;
@@ -878,11 +909,8 @@ namespace OpenUtau.Classic {
                     if (v > cMax) cMax = v;
                 }
 
-                string matchedColor = null;
                 var singer = project.tracks[trackNo].Singer;
-                if (singer != null && singer.Subbanks != null) {
-                    foreach (var sub in singer.Subbanks) if (!string.IsNullOrEmpty(sub.Color) && exp.name.IndexOf(sub.Color, StringComparison.OrdinalIgnoreCase) >= 0) matchedColor = sub.Color;
-                }
+                string matchedColor = GetMatchedColor(singer, exp);
 
                 if (matchedColor != null) {
                     if (cMax > 0.05f) dynamicExps.Add((exp, c, cMin, cMax, matchedColor));
@@ -1020,11 +1048,8 @@ namespace OpenUtau.Classic {
                     if (v > cMax) cMax = v;
                 }
 
-                string matchedColor = null;
                 var singer = project.tracks[trackNo].Singer;
-                if (singer != null && singer.Subbanks != null) {
-                    foreach (var sub in singer.Subbanks) if (!string.IsNullOrEmpty(sub.Color) && exp.name.IndexOf(sub.Color, StringComparison.OrdinalIgnoreCase) >= 0) matchedColor = sub.Color;
-                }
+                string matchedColor = GetMatchedColor(singer, exp);
 
                 if (matchedColor != null) {
                     if (cMax > 0.05f) dynamicExps.Add((exp, c, cMin, cMax, matchedColor));
