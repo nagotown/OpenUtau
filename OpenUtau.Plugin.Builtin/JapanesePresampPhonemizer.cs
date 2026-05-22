@@ -1,9 +1,11 @@
 ﻿using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Classic;
 using OpenUtau.Api;
+using OpenUtau.Core;
 using OpenUtau.Core.Ustx;
 //using Serilog;
 
@@ -19,7 +21,12 @@ namespace OpenUtau.Plugin.Builtin {
         // Partial supporting: [NUM][APPEND][PITCH] -> Using to exclude useless characters in lyrics
 
         private USinger singer;
-        private Presamp presamp;
+        private static Presamp sharedPresamp;
+        private Presamp presamp => sharedPresamp;
+        private static int globalPresampGeneration = 0;
+        private int localPresampGeneration = 0;
+        private static PresampWatcher presampWatcher;
+        private static string currentlyWatchedPresampDir;
         private UProject project;
         private UTrack track;
 
@@ -45,16 +52,44 @@ namespace OpenUtau.Plugin.Builtin {
         }
 
         public override void SetSinger(USinger singer) {
-            if (this.singer == singer) {
+            if (this.singer == singer && this.localPresampGeneration == globalPresampGeneration) {
                 return;
             }
+
             this.singer = singer;
             if (this.singer == null) {
                 return;
             }
 
-            presamp = new Presamp();
-            presamp.ReadPresampIni(singer.Location, singer.TextFileEncoding);
+            if (sharedPresamp == null) {
+                sharedPresamp = new Presamp();
+                sharedPresamp.ReadPresampIni(singer.Location, singer.TextFileEncoding);
+            }
+
+            this.localPresampGeneration = globalPresampGeneration;
+            SetupPresampWatcher(singer.Location);
+        }
+
+        private void SetupPresampWatcher(string directory) {
+            if (string.IsNullOrEmpty(directory) || currentlyWatchedPresampDir == directory) {
+                return;
+            }
+            if (presampWatcher != null) {
+                presampWatcher.Dispose();
+                presampWatcher = null;
+            }
+            currentlyWatchedPresampDir = directory;
+            if (Directory.Exists(directory)) {
+                // Using the custom PresampWatcher class you just made!
+                presampWatcher = new PresampWatcher(directory, () => {
+                    System.Threading.Thread.Sleep(200);
+                    sharedPresamp = null;
+                    globalPresampGeneration++;
+                    if (this.singer != null) {
+                        OpenUtau.Core.SingerManager.Inst.ScheduleReload(this.singer);
+                    }
+                });
+            }
         }
 
         public override Result Process(Note[] notes, Note? prev, Note? next, Note? prevNeighbour, Note? nextNeighbour, Note[] prevNeighbours) {
