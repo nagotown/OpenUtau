@@ -202,7 +202,9 @@ namespace OpenUtau.Plugin.Builtin {
         public override void SetSinger(USinger singer) {
             base.SetSinger(singer);
 
-            if (this.singer != null && this.singer.Loaded) {
+            if (this.singer != singer || this.localYamlGeneration != globalYamlGeneration) {
+                this.singer = singer;
+                this.localYamlGeneration = globalYamlGeneration;
                 
                 consExceptions.Clear();
                 if (stop != null) consExceptions.AddRange(stop);

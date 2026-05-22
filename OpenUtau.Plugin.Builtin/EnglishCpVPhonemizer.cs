@@ -212,7 +212,9 @@ namespace OpenUtau.Plugin.Builtin {
         public override void SetSinger(USinger singer) {
             base.SetSinger(singer);
 
-            if (this.singer != null && this.singer.Loaded) {
+            if (this.singer != singer || this.localYamlGeneration != globalYamlGeneration) {
+                this.singer = singer;
+                this.localYamlGeneration = globalYamlGeneration;
                 
                 string file = Path.Combine(this.singer.Location, YamlFileName);
                 if (!File.Exists(file)) {

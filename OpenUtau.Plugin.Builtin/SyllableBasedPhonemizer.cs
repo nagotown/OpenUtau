@@ -9,6 +9,7 @@ using Serilog;
 using System.Threading.Tasks;
 using static OpenUtau.Api.Phonemizer;
 using System.Collections;
+using OpenUtau.Core;
 
 namespace OpenUtau.Plugin.Builtin {
     /// <summary>
@@ -256,8 +257,9 @@ namespace OpenUtau.Plugin.Builtin {
         }
 
         public override void SetSinger(USinger singer) {
-            if (this.singer != singer) {
+            if (this.singer != singer || this.localYamlGeneration != globalYamlGeneration) {
                 this.singer = singer;
+                this.localYamlGeneration = globalYamlGeneration;
 
                 if (this.singer == null || !this.singer.Loaded) {
                     return;
@@ -290,6 +292,8 @@ namespace OpenUtau.Plugin.Builtin {
                 } else if (!string.IsNullOrEmpty(PluginDir)) {
                     file = Path.Combine(PluginDir, YamlFileName);
                 }
+
+                SetupYamlWatcher(file);
 
                 if (!string.IsNullOrEmpty(file)) {
                     bool shouldWriteTemplate = false;
@@ -412,6 +416,10 @@ namespace OpenUtau.Plugin.Builtin {
         protected IG2p dictionary => dictionaries[GetType()];
         protected bool isDictionaryLoading => dictionaries[GetType()] == null;
         protected double TransitionBasicLengthMs => 100;
+        public static YamlWatcher yamlWatcher;
+        public static string currentlyWatchedYaml;
+        public static int globalYamlGeneration = 0;
+        public int localYamlGeneration = 0;
 
         private Dictionary<Type, IG2p> dictionaries = new Dictionary<Type, IG2p>();
         private const string FORCED_ALIAS_SYMBOL = "?";
@@ -743,6 +751,43 @@ namespace OpenUtau.Plugin.Builtin {
 
         protected double GetTransitionBasicLengthMsByConstant() {
             return TransitionBasicLengthMs * GetTempoNoteLengthFactor();
+        }
+
+        private void SetupYamlWatcher(string yamlFilePath) {
+            if (string.IsNullOrEmpty(yamlFilePath) || currentlyWatchedYaml == yamlFilePath) {
+                return;
+            }
+
+            if (yamlWatcher != null) {
+                yamlWatcher.Dispose();
+                yamlWatcher = null;
+            }
+
+            currentlyWatchedYaml = yamlFilePath;
+            string directory = Path.GetDirectoryName(yamlFilePath);
+
+            if (Directory.Exists(directory)) {
+                yamlWatcher = new YamlWatcher(directory, () => {
+                    Log.Information($"[SyllableBasedPhonemizer] Detected change in {YamlFileName}, incrementing generation...");
+                    
+                    System.Threading.Thread.Sleep(200);
+
+                    lock (dictionaries) {
+                        if (dictionaries.ContainsKey(this.GetType())) {
+                            dictionaries.Remove(this.GetType());
+                        }
+                    }
+
+                    backupVowels = null;
+                    backupConsonants = null;
+                    backupDictionaryReplacements = null;
+                    globalYamlGeneration++;
+
+                    if (this.singer != null) {
+                        OpenUtau.Core.SingerManager.Inst.ScheduleReload(this.singer);
+                    }
+                });
+            }
         }
 
         /// <summary>
