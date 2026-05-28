@@ -80,7 +80,7 @@
            CornerRadius="2" PointerPressed="HeaderPointerPressed">
     <Grid ColumnDefinitions="auto,*,auto" RowDefinitions="auto,auto,auto,auto,auto,*" Background="Transparent">
       <Panel Grid.Column="0" Grid.RowSpan="6" VerticalAlignment="Stretch">
-        <Border BorderThickness="0,0,1,1" MaxHeight="101" VerticalAlignment="Top" CornerRadius="0,0,2,0"
+        <Border BorderThickness="0,0,1,0" MaxHeight="100" VerticalAlignment="Top" CornerRadius="0,0,2,0"
                 BorderBrush="{DynamicResource NeutralAccentBrushSemi}" ClipToBounds="True">
           <Image Source="{Binding Avatar}" Stretch="Uniform" VerticalAlignment="Top" ToolTip.Tip="{Binding Singer}" />
         </Border>
@@ -91,7 +91,7 @@
         </Border>
       </Panel>
       <Button Classes="clear" Classes.shrink="{Binding !IsRendererVisible}" Grid.Row="0" Grid.Column="1" Padding="2,1,0,0"
-              Height="17" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Focusable="False"
+              Height="18" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Focusable="False"
               Content="{Binding TrackName}" Click="TrackNameButtonClicked">
         <Button.Styles>
           <Style Selector="Button:not(.shrink)">
@@ -102,14 +102,14 @@
           </Style>
         </Button.Styles>
       </Button>
-      <Button Classes="clear" Grid.Row="1" Grid.Column="1" Margin="1" Padding="2,1,0,0" Height="17" IsVisible="{Binding IsSingerVisible}"
+      <Button Classes="clear" Grid.Row="1" Grid.Column="1" Margin="1" Padding="2,1,0,0" Height="18" IsVisible="{Binding IsSingerVisible}"
               HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Focusable="False"
               Content="{Binding Singer, TargetNullValue={StaticResource tracks.selectsinger}}"
               Click="SingerButtonClicked" ToolTip.Tip="{Binding Singer}"/>
-      <Button Classes="clear" Grid.Row="2" Grid.Column="1" Margin="1" Padding="2,1,0,0" Height="17" IsVisible="{Binding IsPhonemizerVisible}"
+      <Button Classes="clear" Grid.Row="2" Grid.Column="1" Margin="1" Padding="2,1,0,0" Height="18" IsVisible="{Binding IsPhonemizerVisible}"
               HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Focusable="False"
               Content="{Binding PhonemizerTag}" Click="PhonemizerButtonClicked" ToolTip.Tip="{Binding Phonemizer}"/>
-      <Button Classes="clear" Grid.Row="3" Grid.Column="1" Margin="1" Padding="2,1,0,0" Height="17" IsVisible="{Binding IsRendererVisible}"
+      <Button Classes="clear" Grid.Row="3" Grid.Column="1" Margin="1" Padding="2,1,0,0" Height="18" IsVisible="{Binding IsRendererVisible}"
               HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Focusable="False"
               Content="{Binding Renderer}" Click="RendererButtonClicked"
               ToolTip.Tip="{DynamicResource tracks.selectrenderer}"/>
@@ -160,7 +160,7 @@
                 BorderThickness="0" IsVisible="False" IsEnabled="False" TextAlignment="Center" FontSize="9"
                 FontFamily="monospace" KeyDown="VolumeOrPanTextBoxKeyDown" LostFocus="VolumeOrPanTextBoxLostFocus"/>
       </Grid>
-      <Button Grid.Column="1" Grid.Row="0" Classes="clear" Height="17" Width="17" Margin="1" Padding="0"
+      <Button Grid.Column="1" Grid.Row="0" Classes="clear" Height="18" Width="18" Margin="1" Padding="0"
               VerticalAlignment="Top" Content="⋯" IsVisible="{Binding !IsRendererVisible}" HorizontalAlignment="Right">
         <Button.Flyout>
           <Flyout>
@@ -190,7 +190,7 @@
           </Flyout>
         </Button.Flyout>
       </Button>
-      <ToggleButton Classes="toolbar" Grid.Row="0" Grid.Column="2" Margin="1" Padding="0" Height="17"
+      <ToggleButton Classes="toolbar" Grid.Row="0" Grid.Column="2" Margin="1" Padding="0" Height="18"
                     HorizontalAlignment="Stretch" ToolTip.Tip="{DynamicResource tracks.mute}"
                     IsChecked="{Binding Mute, Mode=OneWay}" Command="{Binding ToggleMute}">
         <Path Classes="filled" Width="24" Height="24"
@@ -204,7 +204,7 @@
           </ContextMenu>
         </ToggleButton.ContextMenu>
       </ToggleButton>
-      <ToggleButton Classes="toolbar" Grid.Row="1" Grid.Column="2" Margin="1" Padding="0" Height="17"
+      <ToggleButton Classes="toolbar" Grid.Row="1" Grid.Column="2" Margin="1" Padding="0" Height="18"
                     HorizontalAlignment="Stretch" ToolTip.Tip="{DynamicResource tracks.solo}"
                     IsChecked="{Binding Solo, Mode=OneWay}" Command="{Binding ToggleSolo}">
         <Path Classes="filled" Width="24" Height="24"
@@ -217,7 +217,7 @@
           </ContextMenu>
         </ToggleButton.ContextMenu>
       </ToggleButton>
-      <Button Grid.Row="3" Grid.Column="2" Margin="1" Padding="0" Height="17" Background="Transparent"
+      <Button Grid.Row="3" Grid.Column="2" Margin="1" Padding="0" Height="18" Background="Transparent"
                     HorizontalAlignment="Stretch" Click="TrackSettingsButtonClicked" IsVisible="{Binding IsRendererVisible}"
                     ToolTip.Tip="{DynamicResource tracks.tracksettings}">
         <Path Classes="clear" Width="24" Height="24"
