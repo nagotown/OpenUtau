@@ -76,7 +76,7 @@
       </ContextMenu.Styles>
     </ContextMenu>
   </UserControl.Resources>
-  <Border Margin="1,1,1,1" BorderThickness="1" BorderBrush="{DynamicResource NeutralAccentBrushSemi}"
+  <Border Margin="1,1,1,1" BorderThickness="1" BorderBrush="{Binding HeaderBorderBrush}"
            CornerRadius="2" PointerPressed="HeaderPointerPressed">
     <Grid ColumnDefinitions="auto,*,auto" RowDefinitions="auto,auto,auto,auto,auto,*" Background="Transparent">
       <Panel Grid.Column="0" Grid.RowSpan="6" VerticalAlignment="Stretch">
