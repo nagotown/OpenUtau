@@ -80,7 +80,7 @@
            CornerRadius="2" PointerPressed="HeaderPointerPressed">
     <Grid ColumnDefinitions="auto,*,auto" RowDefinitions="auto,auto,auto,auto,auto,*" Background="Transparent">
       <Panel Grid.Column="0" Grid.RowSpan="6" VerticalAlignment="Stretch">
-        <Border BorderThickness="0,0,1,0" MaxHeight="100" VerticalAlignment="Top" CornerRadius="0,0,2,0"
+        <Border BorderThickness="0,0,1,0" MaxHeight="100" VerticalAlignment="Top"
                 BorderBrush="{DynamicResource NeutralAccentBrushSemi}" ClipToBounds="True">
           <Image Source="{Binding Avatar}" Stretch="Uniform" VerticalAlignment="Top" ToolTip.Tip="{Binding Singer}" />
         </Border>
