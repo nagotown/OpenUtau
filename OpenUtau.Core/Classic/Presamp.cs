@@ -310,15 +310,20 @@ namespace Classic {
             string phoneme = lyric;
             string suffix = "";
 
-            if (phoneme.Contains(AliasRules.VCPAD)) {
+            if (!string.IsNullOrEmpty(AliasRules.VCPAD) && phoneme.Contains(AliasRules.VCPAD)) {
                 var split = phoneme.Split(new string[] { AliasRules.VCPAD }, StringSplitOptions.None);
                 preVowel = split[0];
-                phoneme = split[1];
-            } else if (phoneme.Contains(AliasRules.VCVPAD)) {
+                if (split.Length > 1) {
+                    phoneme = split[1];
+                }
+            } else if (!string.IsNullOrEmpty(AliasRules.VCVPAD) && phoneme.Contains(AliasRules.VCVPAD)) {
                 var split = phoneme.Split(new string[] { AliasRules.VCVPAD }, StringSplitOptions.None);
                 preVowel = split[0];
-                phoneme = split[1];
+                if (split.Length > 1) {
+                    phoneme = split[1];
+                }
             }
+            
             if(phoneme == "") {
                 return new string[] { preVowel, phoneme, suffix };
             }
