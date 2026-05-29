@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Linq;
 using System.Reactive.Linq;
 using Avalonia;
 using Avalonia.Controls;
@@ -101,6 +102,21 @@ namespace OpenUtau.App.Controls {
                         }
                     }
                 });
+            MessageBus.Current.Listen<TrackSelectionEvent>()
+                .Subscribe(e => {
+                    var selectedTracks = new HashSet<UTrack>(e.selectedTracks);
+                    foreach (var (track, header) in trackHeaders) {
+                        if (header.ViewModel != null) {
+                            header.ViewModel.IsSelected = selectedTracks.Contains(track);
+                        }
+                    }
+                });
+            MessageBus.Current.Listen<ThemeChangedEvent>()
+                .Subscribe(_ => {
+                    foreach (var (_, header) in trackHeaders) {
+                        header.ViewModel?.RefreshSelectionStyle();
+                    }
+                });
         }
 
         protected override void OnInitialized() {
@@ -166,6 +182,9 @@ namespace OpenUtau.App.Controls {
 
         void Add(UTrack track) {
             var vm = new TrackHeaderViewModel(track);
+            if (DataContext is TracksViewModel tracksViewModel) {
+                vm.IsSelected = tracksViewModel.SelectedTracks.Contains(track);
+            }
             var header = new TrackHeader() {
                 DataContext = vm,
                 ViewModel = vm,
