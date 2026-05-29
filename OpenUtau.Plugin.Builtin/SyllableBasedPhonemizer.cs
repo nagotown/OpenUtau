@@ -394,7 +394,7 @@ namespace OpenUtau.Plugin.Builtin {
                                 foreach (var replacement in data.replacements) {
                                     string ruleScope = string.IsNullOrEmpty(replacement.where) ? "inside" : replacement.where.ToLowerInvariant();
                                     if (replacement.from is IEnumerable<object> fromList) {
-                                        string[] fromArray = fromList.Select(item => item.ToString()).ToArray();
+                                        string[] fromArray = fromList.Select(item => item.ToString() ?? "null").ToArray();
                                         if (replacement.to is string toString) mergingReplacements.Add(new Replacement { from = fromArray, to = toString, where = ruleScope });
                                         else if (replacement.to is IEnumerable<object> toList) splittingReplacements.Add(new Replacement { from = fromArray, to = toList.Select(item => item.ToString()).ToArray(), where = ruleScope });
                                     } else if (replacement.from is string fromString) {
@@ -1006,7 +1006,7 @@ namespace OpenUtau.Plugin.Builtin {
             public List<string> FromList {
                 get {
                     if (from is string s) return new List<string> { s };
-                    if (from is IEnumerable<object> list) return list.Select(x => x.ToString()).ToList();
+                    if (from is IEnumerable<object> list) return list.Select(x => x.ToString() ?? "null").ToList();
                     return new List<string>();
                 }
             }
@@ -1014,7 +1014,7 @@ namespace OpenUtau.Plugin.Builtin {
             public List<string> ToList {
                 get {
                     if (to is string s) return new List<string> { s };
-                    if (to is IEnumerable<object> list) return list.Select(x => x.ToString()).ToList();
+                    if (to is IEnumerable<object> list) return list.Select(x => x.ToString() ?? "null").ToList();
                     return new List<string>();
                 }
             }
@@ -1099,7 +1099,7 @@ namespace OpenUtau.Plugin.Builtin {
 
                     if (fromArray != null && fromArray.Length > 0 && idx + fromArray.Length <= inputPhonemes.Count) {
                         bool match = true;
-                        var captures = new Dictionary<string, Queue<string>>();
+                        var captures = new Dictionary<string, List<string>>();
                         
                         for (int j = 0; j < fromArray.Length; j++) {
                             string rulePh = fromArray[j];
@@ -1107,8 +1107,8 @@ namespace OpenUtau.Plugin.Builtin {
                             
                             if (IsGroupKeyword(rulePh)) {
                                 if (IsGroupMatch(rulePh, actualPh)) {
-                                    if (!captures.ContainsKey(rulePh)) captures[rulePh] = new Queue<string>();
-                                    captures[rulePh].Enqueue(actualPh);
+                                    if (!captures.ContainsKey(rulePh)) captures[rulePh] = new List<string>();
+                                    captures[rulePh].Add(actualPh);
                                 } else {
                                     match = false; break;
                                 }
@@ -1128,8 +1128,19 @@ namespace OpenUtau.Plugin.Builtin {
                             }
 
                             if (toArray != null) {
+                                var captureIndices = new Dictionary<string, int>();
+                                
                                 foreach (string toPh in toArray) {
-                                    finalPhonemes.Add(IsGroupKeyword(toPh) && captures.ContainsKey(toPh) && captures[toPh].Count > 0 ? captures[toPh].Dequeue() : toPh);
+                                    if (IsGroupKeyword(toPh) && captures.ContainsKey(toPh) && captures[toPh].Count > 0) {
+                                        if (!captureIndices.ContainsKey(toPh)) captureIndices[toPh] = 0;
+                                        int cIdx = captureIndices[toPh];
+                                        if (cIdx >= captures[toPh].Count) cIdx = captures[toPh].Count - 1;
+                                        
+                                        finalPhonemes.Add(captures[toPh][cIdx]);
+                                        captureIndices[toPh]++;
+                                    } else {
+                                        finalPhonemes.Add(toPh);
+                                    }
                                 }
                             }
                             
@@ -1188,11 +1199,12 @@ namespace OpenUtau.Plugin.Builtin {
             bool hasPrevV = !string.IsNullOrEmpty(syllable.prevV);
             bool hasV = !string.IsNullOrEmpty(syllable.v);
 
-            if (hasPrevV) currentPhonemes.Add(syllable.prevV);
+            currentPhonemes.Add(hasPrevV ? syllable.prevV : "null");
+            
             if (syllable.cc != null) currentPhonemes.AddRange(syllable.cc);
             if (hasV) currentPhonemes.Add(syllable.v);
 
-            bool isBoundary = hasPrevV && syllable.position == 0;
+            bool isBoundary = (hasPrevV && syllable.position == 0) || !hasPrevV;
             List<string> finalPhonemes = ApplyReplacements(currentPhonemes, isBoundary);
 
             string newPrevV = "";
@@ -1200,8 +1212,13 @@ namespace OpenUtau.Plugin.Builtin {
             List<string> newCc = new List<string>();
 
             if (finalPhonemes.Count > 0) {
-                if (hasPrevV) {
-                    newPrevV = finalPhonemes[0];
+                string firstPh = finalPhonemes[0];
+                
+                if (firstPh == "null") {
+                    newPrevV = "";
+                    finalPhonemes.RemoveAt(0);
+                } else {
+                    newPrevV = firstPh;
                     finalPhonemes.RemoveAt(0);
                 }
                 if (hasV && finalPhonemes.Count > 0) {
@@ -1234,8 +1251,7 @@ namespace OpenUtau.Plugin.Builtin {
 
             List<string> currentPhonemes = new List<string>();
             bool hasPrevV = !string.IsNullOrEmpty(ending.prevV);
-
-            if (hasPrevV) currentPhonemes.Add(ending.prevV);
+            currentPhonemes.Add(hasPrevV ? ending.prevV : "null");
             if (ending.cc != null) currentPhonemes.AddRange(ending.cc);
 
             List<string> finalPhonemes = ApplyReplacements(currentPhonemes, true);
@@ -1244,8 +1260,12 @@ namespace OpenUtau.Plugin.Builtin {
             List<string> newCc = new List<string>();
 
             if (finalPhonemes.Count > 0) {
-                if (hasPrevV) {
-                    newPrevV = finalPhonemes[0];
+                string firstPh = finalPhonemes[0];
+                if (firstPh == "null") {
+                    newPrevV = "";
+                    finalPhonemes.RemoveAt(0);
+                } else {
+                    newPrevV = firstPh;
                     finalPhonemes.RemoveAt(0);
                 }
                 newCc.AddRange(finalPhonemes);
