@@ -808,6 +808,11 @@ namespace OpenUtau.Plugin.Builtin {
             var mappedAlias = MapPhoneme(validatedAlias, tone + toneShift, color, alt, singer);
 
             if (singer.TryGetMappedOto(mappedAlias, tone + toneShift, out var oto)) {
+                // If overlap is negative, add that absolute duration to the preutterance 
+                // to ensure the entire consonant timing is preserved.
+                if (oto.Overlap < 0) {
+                    return oto.Preutter - oto.Overlap;
+                }
                 return oto.Preutter; 
             }
 
