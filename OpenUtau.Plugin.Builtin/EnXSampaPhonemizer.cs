@@ -494,8 +494,10 @@ namespace OpenUtau.Plugin.Builtin {
                 if (CurrentWordCc.Length >= 2 && !PreviousWordCc.Contains(cc1)) {
                     cc1 = $"{string.Join("", cc.Skip(i))}";
                 }
-                if (CurrentWordCc.Length >= 2 && !PreviousWordCc.Contains(cc1) && liquid.Contains(cc[i + 1]) || semivowel.Contains(cc[i + 1])) {
-                    glides(cc1);
+                if (CurrentWordCc.Length >= 2) {
+                    if (liquid.Contains(cc[i + 1]) || semivowel.Contains(cc[i + 1])) {
+                        glides(cc1);
+                    }
                 }
                 if (!HasOto(cc1, syllable.tone)) {
                     cc1 = ValidateAlias(cc1);
@@ -527,11 +529,13 @@ namespace OpenUtau.Plugin.Builtin {
                     if (CurrentWordCc.Length >= 2 && !PreviousWordCc.Contains(cc2)) {
                         cc2 = $"{string.Join("", cc.Skip(i))}";
                     }
-                    if (CurrentWordCc.Length >= 2 && !PreviousWordCc.Contains(cc1) && liquid.Contains(cc[i + 2]) || semivowel.Contains(cc[i + 2])) {
-                        glides(cc1);
-                    }
                     if (!HasOto(cc2, syllable.tone)) {
                         cc2 = ValidateAlias(cc2);
+                    }
+                    if (CurrentWordCc.Length >= 2) {
+                        if (liquid.Contains(cc[i + 1]) || semivowel.Contains(cc[i + 1])) {
+                            glides(cc1);
+                        }
                     }
                     // Use [C2C3] when current word has 2 consonants or more and [C2C3C4...] does not exist
                     if (!HasOto(cc2, syllable.tone) && CurrentWordCc.Length >= 2 && CurrentWordCc.Contains(cc2)) {
