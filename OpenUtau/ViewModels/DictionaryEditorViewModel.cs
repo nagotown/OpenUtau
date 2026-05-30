@@ -407,11 +407,12 @@ namespace OpenUtau.App.ViewModels {
             YamlCategory? currentCategory = null;
 
             foreach (var rawLine in lines) {
-                string line = rawLine.Trim();
-                if (string.IsNullOrEmpty(line)) continue;
+                string lineToProcess = rawLine.TrimEnd('\r', '\n');
+                if (string.IsNullOrEmpty(lineToProcess)) continue;
+                string headerCheck = lineToProcess.Trim();
 
-                if (line.StartsWith("[") && line.EndsWith("]")) {
-                    string sectionName = line.Substring(1, line.Length - 2);
+                if (headerCheck.StartsWith("[") && headerCheck.EndsWith("]")) {
+                    string sectionName = headerCheck.Substring(1, headerCheck.Length - 2);
                     currentCategory = new YamlCategory { Name = sectionName };
                     Categories.Add(currentCategory);
 
@@ -431,34 +432,31 @@ namespace OpenUtau.App.ViewModels {
                 var newRow = new DynamicYamlRow();
                 
                 if (currentCategory.Name == "VOWEL") {
-                    var parts = line.Split('=');
+                    var parts = lineToProcess.Split('=');
                     newRow["ID"] = parts.Length > 0 ? parts[0] : "";
                     newRow["Base"] = parts.Length > 1 ? parts[1] : "";
                     newRow["Phonemes"] = parts.Length > 2 ? parts[2] : "";
                     newRow["Vol"] = parts.Length > 3 ? parts[3] : "";
                 } 
                 else if (currentCategory.Name == "CONSONANT") {
-                    var parts = line.Split('=');
+                    var parts = lineToProcess.Split('=');
                     newRow["ID"] = parts.Length > 0 ? parts[0] : "";
                     newRow["Phonemes"] = parts.Length > 1 ? parts[1] : "";
                     newRow["Crossfade"] = parts.Length > 2 ? parts[2] : "";
                 } 
                 else if (currentCategory.Name == "REPLACE" || currentCategory.Name == "ALIAS") {
-                    var parts = line.Split(new[] { '=' }, 2);
-                    newRow["Key"] = parts.Length > 0 ? parts[0] : "";
+                    var parts = lineToProcess.Split(new[] { '=' }, 2);
+                    newRow["Key"] = parts.Length > 0 ? parts[0].TrimEnd() : "";
                     newRow["Value"] = parts.Length > 1 ? parts[1] : "";
                 } 
                 else {
-                    // Single value lists like [PRIORITY], [APPEND], [PITCH]
-                    newRow["Value"] = line;
+                    newRow["Value"] = lineToProcess;
                 }
 
                 currentCategory.Rows.Add(newRow);
             }
 
             if (Categories.Count > 0) SelectedCategory = Categories[0];
-            
-            // FIX 2: Added the missing semicolon!
             ColumnsChanged?.Invoke(); 
         }
         public void SavePresamp(string filePath) {
