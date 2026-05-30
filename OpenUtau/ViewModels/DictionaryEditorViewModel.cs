@@ -358,20 +358,41 @@ namespace OpenUtau.App.ViewModels {
         public void AddNewColumn() {
             var category = SelectedCategory;
             if (category == null || string.IsNullOrWhiteSpace(ManageColumnName)) return;
-            string col = ManageColumnName.Trim();
-            if (!category.Columns.Contains(col)) {
-                category.Columns.Add(col);
+            var columnsToAdd = ManageColumnName.Split(',')
+                .Select(c => c.Trim())
+                .Where(c => !string.IsNullOrEmpty(c))
+                .ToList();
+
+            bool changed = false;
+            foreach (var col in columnsToAdd) {
+                if (!category.Columns.Contains(col)) {
+                    category.Columns.Add(col);
+                    changed = true;
+                }
+            }
+            if (changed) {
                 ColumnsChanged?.Invoke();
             }
+            
             ManageColumnName = string.Empty;
         }
 
         public void RemoveColumn() {
             var category = SelectedCategory;
             if (category == null || string.IsNullOrWhiteSpace(ManageColumnName)) return;
-            string col = ManageColumnName.Trim();
-            if (category.Columns.Contains(col)) {
-                category.Columns.Remove(col);
+            var columnsToRemove = ManageColumnName.Split(',')
+                .Select(c => c.Trim())
+                .Where(c => !string.IsNullOrEmpty(c))
+                .ToList();
+
+            bool changed = false;
+            foreach (var col in columnsToRemove) {
+                if (category.Columns.Contains(col)) {
+                    category.Columns.Remove(col);
+                    changed = true;
+                }
+            }
+            if (changed) {
                 ColumnsChanged?.Invoke();
             }
             ManageColumnName = string.Empty;
