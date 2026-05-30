@@ -135,15 +135,15 @@ namespace Classic {
                                 Priorities.AddRange(line.Split(','));
                                 break;
                             case "[REPLACE]":
-                                var s = line.Split('=');
+                                var s = rawLine.Split(new char[] { '=' }, 2);
                                 if (s.Length >= 2) {
-                                    Replace[s[0]] = s[1];
+                                    Replace[s[0].Trim()] = s[1];
                                 }
                                 break;
                             case "[ALIAS]":
-                                var parts = line.Split('=');
+                                var parts = rawLine.Split(new char[] { '=' }, 2);
                                 if (parts.Length < 2) break;
-                                switch (parts[0].ToUpper()) {
+                                switch (parts[0].Trim().ToUpper()) {
                                     case "VCV": AliasRules.VCV = parts[1]; break;
                                     case "BEGINING_CV": AliasRules.BEGINING_CV = parts[1]; break;
                                     case "CROSS_CV": AliasRules.CROSS_CV = parts[1]; break;
