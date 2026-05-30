@@ -40,7 +40,6 @@ namespace OpenUtau.App.Controls {
                 }
             };
             
-            // Listen for dynamic column additions/removals
             ViewModel.ColumnsChanged += () => {
                 RebuildGridColumns(ViewModel.SelectedCategory);
                 
@@ -55,19 +54,96 @@ namespace OpenUtau.App.Controls {
 
             this.Loaded += (s, e) => LoadDictionaryForPart(Part);
         }
-        private void EditorGrid_LoadingRow(object? sender, Avalonia.Controls.DataGridRowEventArgs e) {
-            e.Row.Header = (e.Row.Index + 1).ToString();
+
+        private void CommentGrid_PointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e) {
+            if (sender is Grid grid && grid.DataContext is DynamicYamlRow row) {
+                var gridControl = this.FindControl<DataGrid>("EditorGrid");
+                if (gridControl == null) return;
+
+                var point = e.GetCurrentPoint(grid);
+
+                if (point.Properties.IsRightButtonPressed) {
+                    if (!gridControl.SelectedItems.Contains(row)) {
+                        gridControl.SelectedItem = row;
+                    }
+                    return; 
+                }
+
+                var modifiers = e.KeyModifiers;
+                
+                if (modifiers.HasFlag(KeyModifiers.Control)) {
+                    if (gridControl.SelectedItems.Contains(row)) gridControl.SelectedItems.Remove(row);
+                    else gridControl.SelectedItems.Add(row);
+                } 
+                else if (modifiers.HasFlag(KeyModifiers.Shift)) {
+                    var lastSelected = gridControl.SelectedItem as DynamicYamlRow;
+                    int startIndex = ViewModel.SelectedCategory?.Rows.IndexOf(lastSelected ?? row) ?? 0;
+                    int endIndex = ViewModel.SelectedCategory?.Rows.IndexOf(row) ?? 0;
+                    
+                    gridControl.SelectedItems.Clear();
+                    int min = Math.Min(startIndex, endIndex);
+                    int max = Math.Max(startIndex, endIndex);
+                    for (int i = min; i <= max; i++) {
+                        if (ViewModel.SelectedCategory?.Rows.Count > i) {
+                            gridControl.SelectedItems.Add(ViewModel.SelectedCategory.Rows[i]);
+                        }
+                    }
+                } 
+                else {
+                    gridControl.SelectedItem = row;
+                }
+            }
         }
+
+        private void CommentGrid_DoubleTapped(object? sender, Avalonia.Input.TappedEventArgs e) {
+            if (sender is Grid grid && grid.DataContext is DynamicYamlRow row) {
+                ViewModel.SelectedRow = row;
+                row.IsEditingComment = true; 
+                
+                if (row.CommentText == "# New Comment..." || row.CommentText == "# New comment...") {
+                    row.CommentText = "# ";
+                }
+                
+                Dispatcher.UIThread.Post(() => {
+                    var textBox = grid.Children.OfType<TextBox>().FirstOrDefault();
+                    if (textBox != null) {
+                        textBox.Focus();
+                        textBox.CaretIndex = textBox.Text?.Length ?? 0;
+                    }
+                }, DispatcherPriority.Normal);
+            }
+        }
+
+        private void CommentTextBox_LostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e) {
+            if (sender is TextBox tb && tb.DataContext is DynamicYamlRow row) {
+                row.IsEditingComment = false; 
+            }
+        }
+
+        private void CommentTextBox_KeyDown(object? sender, Avalonia.Input.KeyEventArgs e) {
+            if (e.Key == Avalonia.Input.Key.Enter || e.Key == Avalonia.Input.Key.Escape) {
+                if (sender is TextBox tb && tb.DataContext is DynamicYamlRow row) {
+                    row.IsEditingComment = false; 
+                }
+                e.Handled = true; 
+            }
+        }
+
+        private void CommentTextBox_TextChanged(object? sender, Avalonia.Controls.TextChangedEventArgs e) {
+            if (sender is TextBox tb && tb.DataContext is DynamicYamlRow row) {
+                row.CommentText = tb.Text ?? "";
+            }
+        }
+
         private void EditorGrid_SelectionChanged(object? sender, Avalonia.Controls.SelectionChangedEventArgs e) {
             if (EditorGrid.SelectedItem != null) {
                 EditorGrid.ScrollIntoView(EditorGrid.SelectedItem, null);
             }
         }
         private void EditorGrid_PointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e) {
-            if (e.GetCurrentPoint(this).Properties.IsRightButtonPressed) {
-                EditorGrid.SelectedItem = null;
-            }
+            // Intentionally blank to allow right click
         }
+        
         protected override void OnDataContextChanged(EventArgs e) {
             base.OnDataContextChanged(e);
             
@@ -96,7 +172,6 @@ namespace OpenUtau.App.Controls {
             var currentData = grid.ItemsSource;
             grid.ItemsSource = null;
 
-            // Safely clear and rebuild the columns
             grid.Columns.Clear();
             if (category != null) {
                 foreach (var colName in category.Columns) {
@@ -168,7 +243,6 @@ namespace OpenUtau.App.Controls {
                 })
                 .ToList();
 
-            // Group by filename to find duplicates
             var groupedFiles = validFiles.GroupBy(f => Path.GetFileName(f).ToLower()).ToList();
             var displayNames = new List<string>();
             var fileMap = new Dictionary<string, string>();

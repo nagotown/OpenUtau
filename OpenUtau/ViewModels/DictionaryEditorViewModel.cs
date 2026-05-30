@@ -13,14 +13,55 @@ using YamlDotNet.Serialization.EventEmitters;
 namespace OpenUtau.App.ViewModels {
     public class DynamicYamlRow : ReactiveObject {
         private readonly Dictionary<string, string> _data = new();
+        public string PrimaryColumnKey { get; }
+
+        public DynamicYamlRow(string primaryColumnKey = "Key") {
+            PrimaryColumnKey = primaryColumnKey;
+        }
 
         public string this[string key] {
             get => _data.ContainsKey(key) ? _data[key] : string.Empty;
             set {
                 _data[key] = value;
                 this.RaisePropertyChanged("Item");
+                this.RaisePropertyChanged(nameof(IsComment));
+                this.RaisePropertyChanged(nameof(IsNotComment));
+                this.RaisePropertyChanged(nameof(CommentText));
             }
         }
+
+        public bool IsComment {
+            get {
+                string val = _data.ContainsKey(PrimaryColumnKey) ? _data[PrimaryColumnKey] : "";
+                return val.TrimStart().StartsWith("#") || val.TrimStart().StartsWith(";");
+            }
+        }
+        
+        // NEW: Allows XAML to bind the hiding of normal cells!
+        public bool IsNotComment => !IsComment;
+
+        public string CommentText {
+            get => _data.ContainsKey(PrimaryColumnKey) ? _data[PrimaryColumnKey] : "";
+            set {
+                _data[PrimaryColumnKey] = value;
+                this.RaisePropertyChanged("Item");
+                this.RaisePropertyChanged(nameof(IsComment));
+                this.RaisePropertyChanged(nameof(IsNotComment));
+                this.RaisePropertyChanged(nameof(CommentText));
+            }
+        }
+
+        private bool _isEditingComment = false;
+        public bool IsEditingComment {
+            get => _isEditingComment;
+            set {
+                _isEditingComment = value;
+                this.RaisePropertyChanged(nameof(IsEditingComment));
+                this.RaisePropertyChanged(nameof(IsNotEditingComment));
+            }
+        }
+        public bool IsNotEditingComment => !IsEditingComment;
+
         public Dictionary<string, string> GetData() => _data;
     }
 
@@ -40,7 +81,6 @@ namespace OpenUtau.App.ViewModels {
         [Reactive] public string SelectedFile { get; set; } = string.Empty;
         public string CurrentFileType => !string.IsNullOrEmpty(SelectedFile) && SelectedFile.EndsWith(".ini", StringComparison.OrdinalIgnoreCase) ? "ini" : "yaml";
 
-        // Dynamic categories for new tables
         public ObservableCollection<YamlCategory> Categories { get; } = new();
         [Reactive] public YamlCategory? SelectedCategory { get; set; }
         public event Action? ColumnsChanged;
@@ -64,9 +104,11 @@ namespace OpenUtau.App.ViewModels {
             SelectedRow = null;
         }
         private DynamicYamlRow CloneRow(DynamicYamlRow original) {
-            var clone = new DynamicYamlRow();
-            if (SelectedCategory != null) {
-                foreach (var col in SelectedCategory.Columns) {
+            var category = SelectedCategory;
+            string firstCol = category?.Columns.FirstOrDefault() ?? "Key";
+            var clone = new DynamicYamlRow(firstCol);
+            if (category != null) {
+                foreach (var col in category.Columns) {
                     clone[col] = original[col];
                 }
             }
@@ -79,6 +121,9 @@ namespace OpenUtau.App.ViewModels {
                     _internalClipboard.Add(CloneRow(item));
                 }
             } 
+            else if (parameter is DynamicYamlRow singleRow) {
+                _internalClipboard.Add(CloneRow(singleRow));
+            }
             else if (SelectedRow != null) {
                 _internalClipboard.Add(CloneRow(SelectedRow));
             }
@@ -89,21 +134,38 @@ namespace OpenUtau.App.ViewModels {
         }
 
         public void PasteRow() {
-            if (SelectedCategory == null || _internalClipboard.Count == 0) return;
-            int insertIndex = SelectedCategory.Rows.Count;
+            var category = SelectedCategory;
+            if (category == null || _internalClipboard.Count == 0) return;
+            int insertIndex = category.Rows.Count;
             if (SelectedRow != null) {
-                insertIndex = SelectedCategory.Rows.IndexOf(SelectedRow) + 1;
+                insertIndex = category.Rows.IndexOf(SelectedRow) + 1;
             }
 
             foreach (var copiedItem in _internalClipboard) {
                 var newRow = CloneRow(copiedItem);
-                SelectedCategory.Rows.Insert(insertIndex, newRow);
+                category.Rows.Insert(insertIndex, newRow);
                 insertIndex++;
-                
                 SelectedRow = newRow;
             }
-
             RefreshIndices?.Invoke(); 
+        }
+
+        public void DeleteSelectedRow(object? parameter) {
+            var category = SelectedCategory;
+            if (category == null) return;
+            if (parameter is System.Collections.IList selectedItems && selectedItems.Count > 0) {
+                var itemsToDelete = selectedItems.Cast<DynamicYamlRow>().ToList();
+                foreach (var item in itemsToDelete) {
+                    category.Rows.Remove(item);
+                }
+            }
+            else if (parameter is DynamicYamlRow singleRow) {
+                category.Rows.Remove(singleRow);
+            }
+            else if (SelectedRow != null) {
+                category.Rows.Remove(SelectedRow);
+            }
+            RefreshIndices?.Invoke();
         }
 
         public DictionaryEditorViewModel() {
@@ -116,26 +178,24 @@ namespace OpenUtau.App.ViewModels {
                 });
         }
         private void Find(bool searchUp) {
-            if (SelectedCategory == null || string.IsNullOrEmpty(ReplaceColumn) || string.IsNullOrEmpty(FindText)) return;
+            var category = SelectedCategory;
+            if (category == null || string.IsNullOrEmpty(ReplaceColumn) || string.IsNullOrEmpty(FindText)) return;
 
             int startIndex = 0;
             if (SelectedRow != null) {
-                startIndex = SelectedCategory.Rows.IndexOf(SelectedRow);
+                startIndex = category.Rows.IndexOf(SelectedRow);
                 startIndex += searchUp ? -1 : 1;
             }
-
-            int count = SelectedCategory.Rows.Count;
+            int count = category.Rows.Count;
             if (count == 0) return;
 
-            // Loop through all rows, wrapping around the top/bottom if necessary
             for (int i = 0; i < count; i++) {
                 int offset = searchUp ? -i : i;
                 int index = (startIndex + offset) % count;
                 if (index < 0) index += count;
 
-                var row = SelectedCategory.Rows[index];
+                var row = category.Rows[index];
                 string currentVal = row[ReplaceColumn];
-
                 if (string.IsNullOrEmpty(currentVal)) continue;
 
                 bool isMatch = false;
@@ -154,12 +214,12 @@ namespace OpenUtau.App.ViewModels {
         public void ExecuteFindNext() => Find(searchUp: false);
         public void ExecuteFindPrevious() => Find(searchUp: true);
         public void ExecuteFindAll(object? parameter) {
-            if (SelectedCategory == null || string.IsNullOrEmpty(ReplaceColumn) || string.IsNullOrEmpty(FindText)) return;
+            var category = SelectedCategory;
+            if (category == null || string.IsNullOrEmpty(ReplaceColumn) || string.IsNullOrEmpty(FindText)) return;
 
             if (parameter is System.Collections.IList selectedItems) {
-                selectedItems.Clear(); // Deselect everything first
-
-                foreach (var row in SelectedCategory.Rows) {
+                selectedItems.Clear(); 
+                foreach (var row in category.Rows) {
                     string currentVal = row[ReplaceColumn];
                     if (string.IsNullOrEmpty(currentVal)) continue;
 
@@ -169,16 +229,12 @@ namespace OpenUtau.App.ViewModels {
                     } else {
                         isMatch = currentVal.Contains(FindText);
                     }
-
-                    if (isMatch) {
-                        selectedItems.Add(row);
-                    }
+                    if (isMatch) selectedItems.Add(row);
                 }
             }
         }
         public void ExecuteReplace() {
             if (SelectedCategory == null || SelectedRow == null || string.IsNullOrEmpty(ReplaceColumn) || string.IsNullOrEmpty(FindText)) return;
-
             string currentVal = SelectedRow[ReplaceColumn];
             if (!string.IsNullOrEmpty(currentVal)) {
                 if (UseRegex) {
@@ -187,13 +243,12 @@ namespace OpenUtau.App.ViewModels {
                     SelectedRow[ReplaceColumn] = currentVal.Replace(FindText, ReplaceText);
                 }
             }
-            
             ExecuteFindNext();
         }
         public void ExecuteReplaceAll() {
-            if (SelectedCategory == null || string.IsNullOrEmpty(ReplaceColumn) || string.IsNullOrEmpty(FindText)) return;
-
-            foreach (var row in SelectedCategory.Rows) {
+            var category = SelectedCategory;
+            if (category == null || string.IsNullOrEmpty(ReplaceColumn) || string.IsNullOrEmpty(FindText)) return;
+            foreach (var row in category.Rows) {
                 string currentVal = row[ReplaceColumn];
                 if (string.IsNullOrEmpty(currentVal)) continue;
 
@@ -234,20 +289,15 @@ namespace OpenUtau.App.ViewModels {
             ManageColumnName = string.Empty;
         }
 
-        // File Actions
         public string GetSelectedFileFullPath() {
-            if (string.IsNullOrEmpty(SelectedFile) || string.IsNullOrEmpty(_currentDirectory)) {
-                return string.Empty;
-            }
+            if (string.IsNullOrEmpty(SelectedFile) || string.IsNullOrEmpty(_currentDirectory)) return string.Empty;
             if (_filePaths.TryGetValue(SelectedFile, out string? relativePath) && relativePath != null) {
                 return Path.Combine(_currentDirectory, relativePath);
             }
-
             return string.Empty;
         }
         public void ConfirmNewFile() {
             if (string.IsNullOrWhiteSpace(NewFileName) || string.IsNullOrEmpty(_currentDirectory)) return;
-
             string fileName = NewFileName.Trim();
             if (!fileName.EndsWith(".yaml") && !fileName.EndsWith(".yml")) {
                 fileName += ".yaml";
@@ -264,43 +314,34 @@ namespace OpenUtau.App.ViewModels {
         }
         public void DeleteSelectedFile() {
             if (string.IsNullOrEmpty(SelectedFile) || string.IsNullOrEmpty(_currentDirectory)) return;
-
             if (_filePaths.TryGetValue(SelectedFile, out string? relativePath) && relativePath != null) {
                 string filePath = Path.Combine(_currentDirectory, relativePath);
                 if (File.Exists(filePath)) {
                     File.Delete(filePath);
                 }
             }
-
             AvailableFiles.Remove(SelectedFile);
             if (AvailableFiles.Count > 0) SelectedFile = AvailableFiles[0];
             else ClearContext();
         }
         public void ConfirmDeleteFile() {
             if (string.IsNullOrEmpty(SelectedFile) || string.IsNullOrEmpty(_currentDirectory)) return;
-
             if (_filePaths.TryGetValue(SelectedFile, out string? relativePath) && relativePath != null) {
                 string filePath = Path.Combine(_currentDirectory, relativePath);
                 if (File.Exists(filePath)) {
                     File.Delete(filePath);
                 }
             }
-
             AvailableFiles.Remove(SelectedFile);
-
             if (AvailableFiles.Count > 0) SelectedFile = AvailableFiles[0];
             else ClearContext();
-
             IsConfirmingDelete = false;
         }
 
-        // Object Actions
         public void ConfirmNewCategory() {
             if (string.IsNullOrWhiteSpace(NewCategoryName) || string.IsNullOrWhiteSpace(NewCategoryColumns)) return;
-
             var columns = NewCategoryColumns.Split(',').Select(c => c.Trim()).Where(c => !string.IsNullOrEmpty(c)).ToList();
             if (columns.Count == 0) return;
-
             var newCat = new YamlCategory { Name = NewCategoryName.Trim(), Columns = columns };
             Categories.Add(newCat);
             SelectedCategory = newCat;
@@ -314,85 +355,89 @@ namespace OpenUtau.App.ViewModels {
             }
         }
 
-        // Column Actions
         public void AddNewColumn() {
-            if (SelectedCategory == null || string.IsNullOrWhiteSpace(ManageColumnName)) return;
+            var category = SelectedCategory;
+            if (category == null || string.IsNullOrWhiteSpace(ManageColumnName)) return;
             string col = ManageColumnName.Trim();
-            if (!SelectedCategory.Columns.Contains(col)) {
-                SelectedCategory.Columns.Add(col);
+            if (!category.Columns.Contains(col)) {
+                category.Columns.Add(col);
                 ColumnsChanged?.Invoke();
             }
             ManageColumnName = string.Empty;
         }
 
         public void RemoveColumn() {
-            if (SelectedCategory == null || string.IsNullOrWhiteSpace(ManageColumnName)) return;
+            var category = SelectedCategory;
+            if (category == null || string.IsNullOrWhiteSpace(ManageColumnName)) return;
             string col = ManageColumnName.Trim();
-            if (SelectedCategory.Columns.Contains(col)) {
-                SelectedCategory.Columns.Remove(col);
+            if (category.Columns.Contains(col)) {
+                category.Columns.Remove(col);
                 ColumnsChanged?.Invoke();
             }
             ManageColumnName = string.Empty;
         }
 
-        // Row Actions
         public void AddNewRow() {
-            if (SelectedCategory == null) return;
-            var newRow = new DynamicYamlRow();
+            var category = SelectedCategory;
+            if (category == null) return;
+            string firstCol = category.Columns.FirstOrDefault() ?? "Key";
+            var newRow = new DynamicYamlRow(firstCol);
 
-            // If a row is clicked, insert the new one directly below it
             if (SelectedRow != null) {
-                int index = SelectedCategory.Rows.IndexOf(SelectedRow);
+                int index = category.Rows.IndexOf(SelectedRow);
                 if (index >= 0) {
-                    SelectedCategory.Rows.Insert(index + 1, newRow);
+                    category.Rows.Insert(index + 1, newRow);
                     SelectedRow = newRow;
                     RefreshIndices?.Invoke(); 
                     return;
                 }
             }
-            // Otherwise, just drop it at the bottom
-            SelectedCategory.Rows.Add(newRow);
+            category.Rows.Add(newRow);
             SelectedRow = newRow;
             RefreshIndices?.Invoke(); 
         }
 
-        public void DeleteSelectedRow(object? parameter) {
-            if (SelectedCategory == null) return;
-            if (parameter is System.Collections.IList selectedItems && selectedItems.Count > 0) {
-                var itemsToDelete = selectedItems.Cast<DynamicYamlRow>().ToList();
-                foreach (var item in itemsToDelete) {
-                    SelectedCategory.Rows.Remove(item);
+        public void AddNewCommentRow() {
+            var category = SelectedCategory;
+            if (CurrentFileType != "yaml" || category == null) return;
+            string firstCol = category.Columns.FirstOrDefault() ?? "Key";
+            var newRow = new DynamicYamlRow(firstCol);
+            newRow[firstCol] = "# New Comment...";
+
+            if (SelectedRow != null) {
+                int index = category.Rows.IndexOf(SelectedRow);
+                if (index >= 0) {
+                    category.Rows.Insert(index + 1, newRow);
+                    SelectedRow = newRow;
+                    RefreshIndices?.Invoke(); 
+                    return;
                 }
             }
-            else if (SelectedRow != null) {
-                SelectedCategory.Rows.Remove(SelectedRow);
-            }
-            RefreshIndices?.Invoke();
+            category.Rows.Add(newRow);
+            SelectedRow = newRow;
+            RefreshIndices?.Invoke(); 
         }
+
         public void SetSingerContext(string dir, Dictionary<string, string> fileMap) {
             _currentDirectory = dir;
             _filePaths = fileMap;
-
             AvailableFiles.Clear();
             foreach (var name in fileMap.Keys) {
                 AvailableFiles.Add(name);
             }
-
-            if (AvailableFiles.Count > 0) {
-                SelectedFile = AvailableFiles[0];
-            }
+            if (AvailableFiles.Count > 0) SelectedFile = AvailableFiles[0];
         }
         public void ClearContext() {
             _currentDirectory = string.Empty;
             AvailableFiles.Clear();
             Categories.Clear();
         }
+
         public void LoadPresamp(string filePath) {
             Categories.Clear();
             if (!File.Exists(filePath)) return;
             
             System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
-
             byte[] rawBytes = File.ReadAllBytes(filePath);
             var strictUtf8 = new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
@@ -409,6 +454,7 @@ namespace OpenUtau.App.ViewModels {
             foreach (var rawLine in lines) {
                 string lineToProcess = rawLine.TrimEnd('\r', '\n');
                 if (string.IsNullOrEmpty(lineToProcess)) continue;
+
                 string headerCheck = lineToProcess.Trim();
 
                 if (headerCheck.StartsWith("[") && headerCheck.EndsWith("]")) {
@@ -416,20 +462,16 @@ namespace OpenUtau.App.ViewModels {
                     currentCategory = new YamlCategory { Name = sectionName };
                     Categories.Add(currentCategory);
 
-                    if (sectionName == "VOWEL") {
-                        currentCategory.Columns = new List<string> { "ID", "Base", "Phonemes", "Vol" };
-                    } else if (sectionName == "CONSONANT") {
-                        currentCategory.Columns = new List<string> { "ID", "Phonemes", "Crossfade" };
-                    } else if (sectionName == "REPLACE" || sectionName == "ALIAS") {
-                        currentCategory.Columns = new List<string> { "Key", "Value" };
-                    } else {
-                        currentCategory.Columns = new List<string> { "Value" };
-                    }
+                    if (sectionName == "VOWEL") currentCategory.Columns = new List<string> { "ID", "Base", "Phonemes", "Vol" };
+                    else if (sectionName == "CONSONANT") currentCategory.Columns = new List<string> { "ID", "Phonemes", "Crossfade" };
+                    else if (sectionName == "REPLACE" || sectionName == "ALIAS") currentCategory.Columns = new List<string> { "Key", "Value" };
+                    else currentCategory.Columns = new List<string> { "Value" };
                     continue;
                 }
 
                 if (currentCategory == null) continue;
-                var newRow = new DynamicYamlRow();
+                string firstCol = currentCategory.Columns.FirstOrDefault() ?? "Key";
+                var newRow = new DynamicYamlRow(firstCol);
                 
                 if (currentCategory.Name == "VOWEL") {
                     var parts = lineToProcess.Split('=');
@@ -459,151 +501,234 @@ namespace OpenUtau.App.ViewModels {
             if (Categories.Count > 0) SelectedCategory = Categories[0];
             ColumnsChanged?.Invoke(); 
         }
+
         public void SavePresamp(string filePath) {
             var lines = new List<string>();
-
             foreach (var cat in Categories) {
                 lines.Add($"[{cat.Name}]");
-
                 foreach (var row in cat.Rows) {
-                    if (cat.Name == "VOWEL") {
-                        lines.Add($"{row["ID"]}={row["Base"]}={row["Phonemes"]}={row["Vol"]}");
-                    } 
-                    else if (cat.Name == "CONSONANT") {
-                        lines.Add($"{row["ID"]}={row["Phonemes"]}={row["Crossfade"]}");
-                    } 
-                    else if (cat.Name == "REPLACE" || cat.Name == "ALIAS") {
-                        lines.Add($"{row["Key"]}={row["Value"]}");
-                    } 
+                    if (cat.Name == "VOWEL") lines.Add($"{row["ID"]}={row["Base"]}={row["Phonemes"]}={row["Vol"]}");
+                    else if (cat.Name == "CONSONANT") lines.Add($"{row["ID"]}={row["Phonemes"]}={row["Crossfade"]}");
+                    else if (cat.Name == "REPLACE" || cat.Name == "ALIAS") lines.Add($"{row["Key"]}={row["Value"]}");
                     else {
                         if (cat.Columns.Count > 0) {
                             string firstCol = cat.Columns[0];
                             string val = row[firstCol] ?? "";
-                            
-                            if (!string.IsNullOrEmpty(val)) {
-                                lines.Add(val);
-                            }
+                            if (!string.IsNullOrEmpty(val)) lines.Add(val);
                         }
                     }
                 }
             }
-
             File.WriteAllLines(filePath, lines, _currentPresampEncoding);
         }
+
         public void LoadSelectedFile() {
             if (string.IsNullOrEmpty(SelectedFile) || string.IsNullOrEmpty(_currentDirectory)) return;
             if (_filePaths.TryGetValue(SelectedFile, out string? relativePath) && relativePath != null) {
                 string targetPath = Path.Combine(_currentDirectory, relativePath);
-                if (SelectedFile.EndsWith(".ini", StringComparison.OrdinalIgnoreCase)) {
-                    LoadPresamp(targetPath);
-                } else {
-                    LoadYaml(targetPath);
-                }
+                if (SelectedFile.EndsWith(".ini", StringComparison.OrdinalIgnoreCase)) LoadPresamp(targetPath);
+                else LoadYaml(targetPath);
             }
         }
 
         public void SaveCurrentFile() {
             if (string.IsNullOrEmpty(SelectedFile) || string.IsNullOrEmpty(_currentDirectory)) return;
-            
             if (_filePaths.TryGetValue(SelectedFile, out string? relativePath) && relativePath != null) {
                 string targetPath = Path.Combine(_currentDirectory, relativePath);
-                if (SelectedFile.EndsWith(".ini", StringComparison.OrdinalIgnoreCase)) {
-                    SavePresamp(targetPath);
-                } else {
-                    SaveYaml(); 
-                }
+                if (SelectedFile.EndsWith(".ini", StringComparison.OrdinalIgnoreCase)) SavePresamp(targetPath);
+                else SaveYaml(); 
             }
         }
+
         public void LoadYaml(string filePath) {
             Categories.Clear();
             if (!File.Exists(filePath)) return;
 
             try {
-                var deserializer = new DeserializerBuilder().Build();
                 var yamlContent = File.ReadAllText(filePath);
+                string[] rawLines = yamlContent.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+                var yaml = new YamlDotNet.RepresentationModel.YamlStream();
+                yaml.Load(new StringReader(yamlContent));
 
-                var rawData = deserializer.Deserialize<Dictionary<string, object>>(yamlContent);
-                if (rawData == null) return;
-
+                if (yaml.Documents.Count == 0 || yaml.Documents[0].RootNode is not YamlDotNet.RepresentationModel.YamlMappingNode rootMapping) return;
                 YamlCategory? metaCategory = null;
+                
+                int lastProcessedLine = 1;
 
-                foreach (var kvp in rawData) {
-                    string rootKey = kvp.Key;
-                    object rootValue = kvp.Value;
+                var sortedRoots = rootMapping.Children.OrderBy(kvp => kvp.Key.Start.Line).ToList();
 
-                    if (rootValue is List<object> rows) {
+                foreach (var kvp in sortedRoots) {
+                    var rootKeyNode = kvp.Key as YamlDotNet.RepresentationModel.YamlScalarNode;
+                    string rootKey = rootKeyNode?.Value ?? "";
+                    var rootValue = kvp.Value;
+                    int currentStartLine = kvp.Key.Start.Line;
+                    
+                    var preComments = new List<string>();
+                    for (int i = lastProcessedLine; i < currentStartLine; i++) {
+                        if (i >= 1 && i <= rawLines.Length) {
+                            string gapLine = rawLines[i - 1].TrimStart();
+                            if (gapLine.StartsWith("#")) preComments.Add(gapLine);
+                        }
+                    }
+                    
+                    lastProcessedLine = currentStartLine + 1;
+
+                    if (rootValue is YamlDotNet.RepresentationModel.YamlSequenceNode seqNode) {
                         var category = new YamlCategory { Name = rootKey };
                         var allColumns = new HashSet<string>();
 
-                        foreach (var rowObj in rows) {
-                            if (rowObj is Dictionary<object, object> rowDict)
-                                foreach (var key in rowDict.Keys)
-                                    if (key != null) allColumns.Add(key.ToString() ?? "");
+                        foreach (var rowNode in seqNode.Children) {
+                            if (rowNode is YamlDotNet.RepresentationModel.YamlMappingNode rowDict) {
+                                foreach (var keyNode in rowDict.Children.Keys) {
+                                    if (keyNode is YamlDotNet.RepresentationModel.YamlScalarNode scalarKey) {
+                                        allColumns.Add(scalarKey.Value ?? "");
+                                    }
+                                }
+                            }
                         }
                         category.Columns = allColumns.ToList();
 
                         if (category.Columns.Count > 0) {
-                            foreach (var rowObj in rows) {
-                                if (rowObj is Dictionary<object, object> rowDict) {
-                                    var row = new DynamicYamlRow();
+                            string firstCol = category.Columns[0];
+                            foreach (var c in preComments) {
+                                var cRow = new DynamicYamlRow(firstCol);
+                                cRow[firstCol] = c;
+                                category.Rows.Add(cRow);
+                            }
+
+                            var sortedRows = seqNode.Children.OrderBy(n => n.Start.Line).ToList();
+                            
+                            foreach (var rowNode in sortedRows) {
+                                int actualLine = rowNode.Start.Line;
+                                for (int i = lastProcessedLine; i < actualLine; i++) {
+                                    if (i >= 1 && i <= rawLines.Length) {
+                                        string gapLine = rawLines[i - 1].TrimStart();
+                                        if (gapLine.StartsWith("#")) {
+                                            var cRow = new DynamicYamlRow(firstCol);
+                                            cRow[firstCol] = gapLine;
+                                            category.Rows.Add(cRow);
+                                        }
+                                    }
+                                }
+                                
+                                if (rowNode is YamlDotNet.RepresentationModel.YamlMappingNode rowDict) {
+                                    var row = new DynamicYamlRow(firstCol);
                                     foreach (var col in category.Columns) {
-                                        var keyMatch = rowDict.Keys.FirstOrDefault(k => k?.ToString() == col);
+                                        var keyMatch = rowDict.Children.Keys.FirstOrDefault(k => (k as YamlDotNet.RepresentationModel.YamlScalarNode)?.Value == col);
                                         if (keyMatch != null) {
-                                            var val = rowDict[keyMatch];
-                                            if (val is List<object> list) {
-                                                // Re-wrap list items in quotes if they contain spaces or commas
-                                                var formattedList = list.Select(x => {
-                                                    string s = x?.ToString() ?? "";
-                                                    return (s.Contains(" ") || s.Contains(",")) ? $"\"{s}\"" : s;
+                                            var valNode = rowDict.Children[keyMatch];
+                                            if (valNode is YamlDotNet.RepresentationModel.YamlSequenceNode listNode) {
+                                                var formattedList = listNode.Children.Select(x => {
+                                                    var scalar = x as YamlDotNet.RepresentationModel.YamlScalarNode;
+                                                    string s = scalar?.Value ?? "";
+                                                    if (scalar != null && (scalar.Style == YamlDotNet.Core.ScalarStyle.DoubleQuoted || scalar.Style == YamlDotNet.Core.ScalarStyle.SingleQuoted)) return $"\"{s}\"";
+                                                    return s;
                                                 });
                                                 row[col] = string.Join(" ", formattedList);
                                                 category.ListColumns.Add(col);
-                                            } else {
-                                                row[col] = val?.ToString() ?? "";
+                                            } else if (valNode is YamlDotNet.RepresentationModel.YamlScalarNode scalarVal) {
+                                                string s = scalarVal.Value ?? "";
+                                                if (scalarVal.Style == YamlDotNet.Core.ScalarStyle.DoubleQuoted || scalarVal.Style == YamlDotNet.Core.ScalarStyle.SingleQuoted) row[col] = $"\"{s}\"";
+                                                else row[col] = s;
                                             }
                                         }
                                     }
                                     category.Rows.Add(row);
                                 }
+                                lastProcessedLine = Math.Max(lastProcessedLine, rowNode.End.Line + 1);
                             }
                         }
                         Categories.Add(category);
-                    } else if (rootValue is Dictionary<object, object> dictData) {
-                        var category = new YamlCategory {
-                            Name = rootKey,
-                            Columns = new List<string> { "Key", "Value" },
-                            IsDictionaryFormat = true
-                        };
 
-                        foreach (var innerKvp in dictData) {
-                            var row = new DynamicYamlRow();
-                            row["Key"] = innerKvp.Key?.ToString() ?? "";
+                    } else if (rootValue is YamlDotNet.RepresentationModel.YamlMappingNode dictNode) {
+                        var category = new YamlCategory { Name = rootKey, Columns = new List<string> { "Key", "Value" }, IsDictionaryFormat = true };
 
-                            if (innerKvp.Value is List<object> list) {
-                                var formattedList = list.Select(x => {
-                                    string s = x?.ToString() ?? "";
-                                    return (s.Contains(" ") || s.Contains(",")) ? $"\"{s}\"" : s;
+                        foreach (var c in preComments) {
+                            var cRow = new DynamicYamlRow("Key");
+                            cRow["Key"] = c;
+                            category.Rows.Add(cRow);
+                        }
+
+                        var sortedInner = dictNode.Children.OrderBy(k => k.Key.Start.Line).ToList();
+
+                        foreach (var innerKvp in sortedInner) {
+                            int actualLine = innerKvp.Key.Start.Line;
+                            for (int i = lastProcessedLine; i < actualLine; i++) {
+                                if (i >= 1 && i <= rawLines.Length) {
+                                    string gapLine = rawLines[i - 1].TrimStart();
+                                    if (gapLine.StartsWith("#")) {
+                                        var cRow = new DynamicYamlRow("Key");
+                                        cRow["Key"] = gapLine;
+                                        category.Rows.Add(cRow);
+                                    }
+                                }
+                            }
+                            
+                            var row = new DynamicYamlRow("Key");
+                            var innerKeyNode = innerKvp.Key as YamlDotNet.RepresentationModel.YamlScalarNode;
+                            string keyStr = innerKeyNode?.Value ?? "";
+                            if (innerKeyNode != null && (innerKeyNode.Style == YamlDotNet.Core.ScalarStyle.DoubleQuoted || innerKeyNode.Style == YamlDotNet.Core.ScalarStyle.SingleQuoted)) row["Key"] = $"\"{keyStr}\"";
+                            else row["Key"] = keyStr;
+
+                            var innerValNode = innerKvp.Value;
+                            if (innerValNode is YamlDotNet.RepresentationModel.YamlSequenceNode listNode) {
+                                var formattedList = listNode.Children.Select(x => {
+                                    var scalar = x as YamlDotNet.RepresentationModel.YamlScalarNode;
+                                    string s = scalar?.Value ?? "";
+                                    if (scalar != null && (scalar.Style == YamlDotNet.Core.ScalarStyle.DoubleQuoted || scalar.Style == YamlDotNet.Core.ScalarStyle.SingleQuoted)) return $"\"{s}\"";
+                                    return s;
                                 });
                                 row["Value"] = string.Join(" ", formattedList);
                                 category.ListColumns.Add("Value");
-                            } else {
-                                row["Value"] = innerKvp.Value?.ToString() ?? "";
+                            } else if (innerValNode is YamlDotNet.RepresentationModel.YamlScalarNode scalarVal) {
+                                string s = scalarVal.Value ?? "";
+                                if (scalarVal.Style == YamlDotNet.Core.ScalarStyle.DoubleQuoted || scalarVal.Style == YamlDotNet.Core.ScalarStyle.SingleQuoted) row["Value"] = $"\"{s}\"";
+                                else row["Value"] = s;
                             }
                             category.Rows.Add(row);
+                            
+                            lastProcessedLine = Math.Max(lastProcessedLine, innerKvp.Value.End.Line + 1);
                         }
                         Categories.Add(category);
-                    } else {
+
+                    } else if (rootValue is YamlDotNet.RepresentationModel.YamlScalarNode scalarRoot) {
                         if (metaCategory == null) {
                             metaCategory = new YamlCategory { Name = "Metadata", Columns = new List<string> { "Key", "Value" } };
                             Categories.Insert(0, metaCategory);
                         }
-                        var row = new DynamicYamlRow();
-                        row["Key"] = rootKey;
-                        row["Value"] = rootValue?.ToString() ?? "";
+
+                        foreach (var c in preComments) {
+                            var cRow = new DynamicYamlRow("Key") { ["Key"] = c };
+                            metaCategory.Rows.Add(cRow);
+                        }
+
+                        var row = new DynamicYamlRow("Key") { ["Key"] = rootKey };
+                        string s = scalarRoot.Value ?? "";
+                        if (scalarRoot.Style == YamlDotNet.Core.ScalarStyle.DoubleQuoted || scalarRoot.Style == YamlDotNet.Core.ScalarStyle.SingleQuoted) row["Value"] = $"\"{s}\"";
+                        else row["Value"] = s;
                         metaCategory.Rows.Add(row);
+                        
+                        lastProcessedLine = Math.Max(lastProcessedLine, scalarRoot.End.Line + 1);
                     }
+                    
+                    lastProcessedLine = Math.Max(lastProcessedLine, rootValue.End.Line + 1);
                 }
 
+                if (Categories.Count > 0) {
+                    var lastCat = Categories.Last();
+                    string firstCol = lastCat.Columns.FirstOrDefault() ?? "Key";
+                    for (int i = lastProcessedLine; i <= rawLines.Length; i++) {
+                        if (i >= 1 && i <= rawLines.Length) {
+                            string gapLine = rawLines[i - 1].TrimStart();
+                            if (gapLine.StartsWith("#")) {
+                                var cRow = new DynamicYamlRow(firstCol);
+                                cRow[firstCol] = gapLine;
+                                lastCat.Rows.Add(cRow);
+                            }
+                        }
+                    }
+                }
+                
                 if (Categories.Count > 0) SelectedCategory = Categories[0];
             } catch (Exception ex) {
                 Serilog.Log.Error(ex, $"Failed to parse YAML: {filePath}");
@@ -613,13 +738,16 @@ namespace OpenUtau.App.ViewModels {
 
         public void SaveYaml() {
             if (string.IsNullOrEmpty(SelectedFile) || string.IsNullOrEmpty(_currentDirectory)) return;
-
             var dictToSave = new Dictionary<string, object>();
 
             foreach (var cat in Categories) {
                 if (cat.Name == "Metadata") {
                     foreach (var row in cat.Rows) {
-                        string key = row["Key"];
+                        string key = row["Key"] ?? "";
+                        if (key.TrimStart().StartsWith("#")) {
+                            dictToSave[$"__comment_{Guid.NewGuid():N}__"] = key.TrimStart();
+                            continue;
+                        }
                         string val = row["Value"];
                         if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(val)) {
                             if (double.TryParse(val, out double numVal)) dictToSave[key] = numVal;
@@ -629,16 +757,17 @@ namespace OpenUtau.App.ViewModels {
                 } else if (cat.IsDictionaryFormat) {
                     var dictNode = new Dictionary<string, object>();
                     foreach (var row in cat.Rows) {
-                        string key = row["Key"];
+                        string key = row["Key"] ?? "";
+                        if (key.TrimStart().StartsWith("#")) {
+                            dictNode[$"__comment_{Guid.NewGuid():N}__"] = key.TrimStart();
+                            continue;
+                        }
                         string val = row["Value"];
-
                         if (string.IsNullOrWhiteSpace(key)) continue;
 
                         if (cat.ListColumns.Contains("Value") && !string.IsNullOrWhiteSpace(val)) {
                             var matches = System.Text.RegularExpressions.Regex.Matches(val, @"\""[^\""]*\""|[^ ,]+");
-                            dictNode[key] = matches.Cast<System.Text.RegularExpressions.Match>()
-                                                   .Select(m => m.Value.Trim('"'))
-                                                   .ToList();
+                            dictNode[key] = matches.Cast<System.Text.RegularExpressions.Match>().Select(m => m.Value).ToList();
                         } else {
                             dictNode[key] = val;
                         }
@@ -647,6 +776,14 @@ namespace OpenUtau.App.ViewModels {
                 } else {
                     var rowList = new List<Dictionary<string, object>>();
                     foreach (var row in cat.Rows) {
+                        string firstColVal = row[cat.Columns.FirstOrDefault() ?? "Key"] ?? "";
+                        if (firstColVal.TrimStart().StartsWith("#")) {
+                            var commentRow = new Dictionary<string, object>();
+                            commentRow["__full_row_comment__"] = firstColVal.TrimStart();
+                            rowList.Add(commentRow);
+                            continue;
+                        }
+
                         var newRow = new Dictionary<string, object>();
                         foreach (var col in cat.Columns) {
                             string val = row[col];
@@ -654,9 +791,7 @@ namespace OpenUtau.App.ViewModels {
 
                             if (cat.ListColumns.Contains(col)) {
                                 var matches = System.Text.RegularExpressions.Regex.Matches(val, @"\""[^\""]*\""|[^ ,]+");
-                                newRow[col] = matches.Cast<System.Text.RegularExpressions.Match>()
-                                                     .Select(m => m.Value.Trim('"'))
-                                                     .ToList();
+                                newRow[col] = matches.Cast<System.Text.RegularExpressions.Match>().Select(m => m.Value).ToList();
                             } else {
                                 newRow[col] = val;
                             }
@@ -675,32 +810,58 @@ namespace OpenUtau.App.ViewModels {
                 .Build();
 
             if (_filePaths.TryGetValue(SelectedFile, out string? relativePath) && relativePath != null) {
-                File.WriteAllText(Path.Combine(_currentDirectory, relativePath), serializer.Serialize(dictToSave));
+                string rawYaml = serializer.Serialize(dictToSave);
+                
+                rawYaml = System.Text.RegularExpressions.Regex.Replace(
+                    rawYaml,
+                    @"^([ \t]*)-\s*\{?\s*__full_row_comment__:\s*(?:>-\s*)?(?:""|')?(.*?)(?:""|')?\s*\}?\s*$",
+                    m => $"{m.Groups[1].Value}{m.Groups[2].Value}",
+                    System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                );
+                
+                rawYaml = System.Text.RegularExpressions.Regex.Replace(
+                    rawYaml,
+                    @"^([ \t]*)\{?\s*__comment_[a-f0-9]+__:\s*(?:>-\s*)?(?:""|')?(.*?)(?:""|')?\s*\}?\s*$",
+                    m => $"{m.Groups[1].Value}{m.Groups[2].Value}",
+                    System.Text.RegularExpressions.RegexOptions.Multiline | System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                );
+                
+                rawYaml = System.Text.RegularExpressions.Regex.Replace(
+                    rawYaml,
+                    @"(?m)^(?=[a-zA-Z0-9_]+:)", 
+                    "\n"
+                );
+                rawYaml = rawYaml.TrimStart('\n');
+
+                File.WriteAllText(Path.Combine(_currentDirectory, relativePath), rawYaml);
             }
         }
     }
 
     public class BracketStyleEmitter : ChainedEventEmitter {
         private int _depth = 0;
-
         public BracketStyleEmitter(IEventEmitter nextEmitter) : base(nextEmitter) { }
-
-        public override void Emit(MappingStartEventInfo eventInfo, IEmitter emitter) {
-            _depth++;
-            // Depth 1 is the Root, Depth 2 is the Category List.
-            // Depth 3+ is the inner row data, which we want wrapped in inline brackets { }
-            eventInfo.Style = _depth >= 3 ? MappingStyle.Flow : MappingStyle.Block;
-
+        public override void Emit(ScalarEventInfo eventInfo, IEmitter emitter) {
+            if (eventInfo.Source.Value is string val && val.Length >= 2 && val.StartsWith("\"") && val.EndsWith("\"")) {
+                string strippedValue = val.Substring(1, val.Length - 2);
+                var newSource = new YamlDotNet.Serialization.ObjectDescriptor(strippedValue, typeof(string), typeof(string));
+                var newEventInfo = new ScalarEventInfo(newSource) { Style = ScalarStyle.DoubleQuoted };
+                base.Emit(newEventInfo, emitter);
+                return;
+            }
             base.Emit(eventInfo, emitter);
         }
-
+        public override void Emit(MappingStartEventInfo eventInfo, IEmitter emitter) {
+            _depth++;
+            eventInfo.Style = _depth >= 3 ? MappingStyle.Flow : MappingStyle.Block;
+            base.Emit(eventInfo, emitter);
+        }
         public override void Emit(MappingEndEventInfo eventInfo, IEmitter emitter) {
             _depth--;
             base.Emit(eventInfo, emitter);
         }
         public override void Emit(SequenceStartEventInfo eventInfo, IEmitter emitter) {
             _depth++;
-            // Depth 3+ is a list inside a row (like phonemes), which we want wrapped in brackets [ ]
             eventInfo.Style = _depth >= 3 ? SequenceStyle.Flow : SequenceStyle.Block;
             base.Emit(eventInfo, emitter);
         }
