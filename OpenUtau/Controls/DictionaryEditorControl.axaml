@@ -170,6 +170,8 @@
                   CanUserResizeColumns="True"
                   HeadersVisibility="All"
                   RowDetailsVisibilityMode="Visible"
+                  LoadingRow="EditorGrid_LoadingRow"
+                  CellEditEnded="EditorGrid_CellEditEnded"
                   SelectionChanged="EditorGrid_SelectionChanged">
                   
           <DataGrid.Styles>
@@ -207,7 +209,6 @@
                          Foreground="{DynamicResource AccentColor3}"
                          BorderThickness="1"
                          FontStyle="Italic"
-                         Margin="5,2"
                          VerticalAlignment="Center" />
               </Grid>
             </DataTemplate>

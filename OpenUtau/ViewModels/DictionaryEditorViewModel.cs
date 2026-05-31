@@ -37,7 +37,6 @@ namespace OpenUtau.App.ViewModels {
             }
         }
         
-        // NEW: Allows XAML to bind the hiding of normal cells!
         public bool IsNotComment => !IsComment;
 
         public string CommentText {
@@ -786,9 +785,13 @@ namespace OpenUtau.App.ViewModels {
                         string val = row["Value"];
                         if (string.IsNullOrWhiteSpace(key)) continue;
 
-                        if (cat.ListColumns.Contains("Value") && !string.IsNullOrWhiteSpace(val)) {
+                        if (!string.IsNullOrWhiteSpace(val)) {
                             var matches = System.Text.RegularExpressions.Regex.Matches(val, @"\""[^\""]*\""|[^ ,]+");
-                            dictNode[key] = matches.Cast<System.Text.RegularExpressions.Match>().Select(m => m.Value).ToList();
+                            if (matches.Count > 1 || cat.ListColumns.Contains("Value")) {
+                                dictNode[key] = matches.Cast<System.Text.RegularExpressions.Match>().Select(m => m.Value).ToList();
+                            } else {
+                                dictNode[key] = val;
+                            }
                         } else {
                             dictNode[key] = val;
                         }
@@ -810,8 +813,8 @@ namespace OpenUtau.App.ViewModels {
                             string val = row[col];
                             if (string.IsNullOrWhiteSpace(val)) continue;
 
-                            if (cat.ListColumns.Contains(col)) {
-                                var matches = System.Text.RegularExpressions.Regex.Matches(val, @"\""[^\""]*\""|[^ ,]+");
+                            var matches = System.Text.RegularExpressions.Regex.Matches(val, @"\""[^\""]*\""|[^ ,]+");
+                            if (matches.Count > 1 || cat.ListColumns.Contains(col)) {
                                 newRow[col] = matches.Cast<System.Text.RegularExpressions.Match>().Select(m => m.Value).ToList();
                             } else {
                                 newRow[col] = val;

@@ -54,6 +54,59 @@ namespace OpenUtau.App.Controls {
 
             this.Loaded += (s, e) => LoadDictionaryForPart(Part);
         }
+        private void EditorGrid_LoadingRow(object? sender, Avalonia.Controls.DataGridRowEventArgs e) {
+            e.Row.Header = (e.Row.Index + 1).ToString();
+        }
+
+        private void EditorGrid_CellEditEnded(object? sender, DataGridCellEditEndedEventArgs e) {
+            if (e.Row.DataContext is DynamicYamlRow row) {
+                if (!row.IsComment) {
+                    string colName = e.Column.Header?.ToString() ?? "";
+                    if (!string.IsNullOrEmpty(colName)) {
+                        string val = row[colName];
+                        if (val != null && val.Contains(",")) {
+                            // Replace commas with spaces, and collapse double spaces
+                            string cleaned = val.Replace(",", " ");
+                            cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"\s+", " ").Trim();
+                            
+                            Dispatcher.UIThread.Post(() => {
+                                row[colName] = cleaned;
+                            }, DispatcherPriority.Normal);
+                        }
+                    }
+                }
+
+                // Auto-delete empty rows when defocused
+                CheckAndRemoveEmptyRow(row);
+            }
+        }
+
+        private void CheckAndRemoveEmptyRow(DynamicYamlRow row) {
+            bool hasValidData = false;
+
+            if (row.IsComment) {
+                string text = row.CommentText?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(text) && text != "#" && text != "," && text != "# ,") {
+                    hasValidData = true;
+                }
+            } else {
+                foreach (var val in row.GetData().Values) {
+                    string cleanVal = val?.Trim() ?? "";
+                    if (!string.IsNullOrEmpty(cleanVal) && cleanVal != ",") {
+                        hasValidData = true;
+                        break;
+                    }
+                }
+            }
+
+            // If empty, silently remove it
+            if (!hasValidData) {
+                Dispatcher.UIThread.Post(() => {
+                    ViewModel.SelectedCategory?.Rows.Remove(row);
+                    ViewModel.RefreshIndices?.Invoke();
+                }, DispatcherPriority.Normal);
+            }
+        }
 
         private void CommentGrid_PointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e) {
             if (sender is Grid grid && grid.DataContext is DynamicYamlRow row) {
@@ -117,6 +170,7 @@ namespace OpenUtau.App.Controls {
         private void CommentTextBox_LostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e) {
             if (sender is TextBox tb && tb.DataContext is DynamicYamlRow row) {
                 row.IsEditingComment = false; 
+                CheckAndRemoveEmptyRow(row); 
             }
         }
 
@@ -124,6 +178,7 @@ namespace OpenUtau.App.Controls {
             if (e.Key == Avalonia.Input.Key.Enter || e.Key == Avalonia.Input.Key.Escape) {
                 if (sender is TextBox tb && tb.DataContext is DynamicYamlRow row) {
                     row.IsEditingComment = false; 
+                    CheckAndRemoveEmptyRow(row); 
                 }
                 e.Handled = true; 
             }
@@ -140,8 +195,9 @@ namespace OpenUtau.App.Controls {
                 EditorGrid.ScrollIntoView(EditorGrid.SelectedItem, null);
             }
         }
+
         private void EditorGrid_PointerPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e) {
-            // Intentionally blank to allow right click
+            // Left intentionally blank to allow standard DataGrid right-clicks
         }
         
         protected override void OnDataContextChanged(EventArgs e) {
@@ -158,6 +214,7 @@ namespace OpenUtau.App.Controls {
                 };
             }
         }
+        
         protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change) {
             base.OnPropertyChanged(change);
             if (change.Property == PartProperty) {
@@ -165,6 +222,7 @@ namespace OpenUtau.App.Controls {
                 LoadDictionaryForPart((UVoicePart?)change.NewValue);
             }
         }
+
         private void RebuildGridColumns(YamlCategory? category) {
             var grid = this.FindControl<DataGrid>("EditorGrid");
             if (grid == null) return;
@@ -185,6 +243,7 @@ namespace OpenUtau.App.Controls {
             }
             grid.ItemsSource = currentData;
         }
+
         private void OnRefreshClicked(object? sender, RoutedEventArgs e) {
             Log.Information("DictionaryEditor: Refresh button clicked.");
             LoadDictionaryForPart(Part);
