@@ -153,7 +153,7 @@
             <Button Grid.Column="2" Command="{Binding ExecuteFindAll}" CommandParameter="{Binding #EditorGrid.SelectedItems}" Content="{DynamicResource dict.replace.findall}" ToolTip.Tip="{DynamicResource dict.replace.findall.tooltip}" VerticalAlignment="Center" Padding="8,2" Margin="0,0,2,0"/>
             <Button Grid.Column="3" Command="{Binding ExecuteFindPrevious}" Content="▲" ToolTip.Tip="{DynamicResource dict.replace.findprev.tooltip}" VerticalAlignment="Center" Padding="8,2" Margin="0,0,2,0"/>
             <Button Grid.Column="4" Command="{Binding ExecuteFindNext}" Content="▼" ToolTip.Tip="{DynamicResource dict.replace.findbtn.tooltip}" VerticalAlignment="Center" Padding="8,2" Margin="0,0,15,0"/>
-            <Button Grid.Column="5" Command="{Binding ExecuteReplace}" Content="{DynamicResource dict.replace.replacebtn}" ToolTip.Tip="{DynamicResource dict.replace.replacebtn.tooltip}" VerticalAlignment="Center" Padding="8,2" Margin="0,0,2,0"/>
+            <Button Grid.Column="5" Command="{Binding ExecuteReplace}" CommandParameter="{Binding #EditorGrid.SelectedItems}" Content="{DynamicResource dict.replace.replacebtn}" ToolTip.Tip="{DynamicResource dict.replace.replacebtn.tooltip}" VerticalAlignment="Center" Padding="8,2" Margin="0,0,2,0"/>
             <Button Grid.Column="6" Command="{Binding ExecuteReplaceAll}" Content="{DynamicResource dict.replace.replaceall}" ToolTip.Tip="{DynamicResource dict.replace.replaceall.tooltip}" VerticalAlignment="Center" Padding="8,2"/>
           </Grid>
           
@@ -219,7 +219,7 @@
               <MenuItem Header="{DynamicResource dict.menu.deselect}" Command="{Binding DeselectAll}" InputGesture="Escape"/>
               <Separator/>
               <MenuItem Header="{DynamicResource dict.entry.comment}" Command="{Binding AddNewCommentRow}"/>
-              <MenuItem Header="{DynamicResource dict.entry.delete}" Command="{Binding DeleteSelectedRow}"/>
+              <MenuItem Header="{DynamicResource dict.entry.delete}" Command="{Binding DeleteSelectedRow}" CommandParameter="{Binding #EditorGrid.SelectedItems}"/>
               <MenuItem Header="{DynamicResource dict.entry.add}" Command="{Binding AddNewRow}"/>
               <Separator/>
               <MenuItem Header="{DynamicResource dict.menu.cut}" Command="{Binding CutRow}" CommandParameter="{Binding #EditorGrid.SelectedItems}"/>

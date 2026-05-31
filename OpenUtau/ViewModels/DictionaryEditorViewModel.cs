@@ -69,6 +69,7 @@ namespace OpenUtau.App.ViewModels {
         public List<string> Columns { get; set; } = new();
         public HashSet<string> ListColumns { get; set; } = new();
         public bool IsDictionaryFormat { get; set; } = false;
+        public bool IsRootScalars { get; set; } = false;
         public ObservableCollection<DynamicYamlRow> Rows { get; } = new();
     }
 
@@ -232,17 +233,38 @@ namespace OpenUtau.App.ViewModels {
                 }
             }
         }
-        public void ExecuteReplace() {
-            if (SelectedCategory == null || SelectedRow == null || string.IsNullOrEmpty(ReplaceColumn) || string.IsNullOrEmpty(FindText)) return;
-            string currentVal = SelectedRow[ReplaceColumn];
-            if (!string.IsNullOrEmpty(currentVal)) {
-                if (UseRegex) {
-                    try { SelectedRow[ReplaceColumn] = System.Text.RegularExpressions.Regex.Replace(currentVal, FindText, ReplaceText); } catch { }
-                } else {
-                    SelectedRow[ReplaceColumn] = currentVal.Replace(FindText, ReplaceText);
+        public void ExecuteReplace(object? parameter) {
+            if (SelectedCategory == null || string.IsNullOrEmpty(ReplaceColumn) || string.IsNullOrEmpty(FindText)) return;
+            bool replacedMultiple = false;
+
+            if (parameter is System.Collections.IList selectedItems && selectedItems.Count > 1) {
+                var itemsToProcess = selectedItems.Cast<DynamicYamlRow>().ToList();
+                
+                foreach (var row in itemsToProcess) {
+                    string currentVal = row[ReplaceColumn];
+                    if (!string.IsNullOrEmpty(currentVal)) {
+                        if (UseRegex) {
+                            try { row[ReplaceColumn] = System.Text.RegularExpressions.Regex.Replace(currentVal, FindText, ReplaceText); } catch { }
+                        } else {
+                            row[ReplaceColumn] = currentVal.Replace(FindText, ReplaceText);
+                        }
+                    }
+                }
+                replacedMultiple = true;
+            } 
+            else if (SelectedRow != null) {
+                string currentVal = SelectedRow[ReplaceColumn];
+                if (!string.IsNullOrEmpty(currentVal)) {
+                    if (UseRegex) {
+                        try { SelectedRow[ReplaceColumn] = System.Text.RegularExpressions.Regex.Replace(currentVal, FindText, ReplaceText); } catch { }
+                    } else {
+                        SelectedRow[ReplaceColumn] = currentVal.Replace(FindText, ReplaceText);
+                    }
                 }
             }
-            ExecuteFindNext();
+            if (!replacedMultiple) {
+                ExecuteFindNext();
+            }
         }
         public void ExecuteReplaceAll() {
             var category = SelectedCategory;
@@ -303,8 +325,9 @@ namespace OpenUtau.App.ViewModels {
             }
             string filePath = Path.Combine(_currentDirectory, fileName);
             if (!File.Exists(filePath)) {
-                File.WriteAllText(filePath, "Metadata:\n  Created: True\n");
+                File.WriteAllText(filePath, "# Created with OpenUtau Dictionary Editor\n");
                 AvailableFiles.Add(fileName);
+                _filePaths[fileName] = fileName; 
             }
             SelectedFile = fileName;
             LoadYaml(filePath); 
@@ -713,7 +736,7 @@ namespace OpenUtau.App.ViewModels {
 
                     } else if (rootValue is YamlDotNet.RepresentationModel.YamlScalarNode scalarRoot) {
                         if (metaCategory == null) {
-                            metaCategory = new YamlCategory { Name = "Metadata", Columns = new List<string> { "Key", "Value" } };
+                            metaCategory = new YamlCategory { Name = "Metadata", Columns = new List<string> { "Key", "Value" }, IsRootScalars = true };
                             Categories.Insert(0, metaCategory);
                         }
 
@@ -761,15 +784,15 @@ namespace OpenUtau.App.ViewModels {
             var dictToSave = new Dictionary<string, object>();
 
             foreach (var cat in Categories) {
-                if (cat.Name == "Metadata") {
+                if (cat.IsRootScalars) {
                     foreach (var row in cat.Rows) {
                         string key = row["Key"] ?? "";
                         if (key.TrimStart().StartsWith("#")) {
                             dictToSave[$"__comment_{Guid.NewGuid():N}__"] = key.TrimStart();
                             continue;
                         }
-                        string val = row["Value"];
-                        if (!string.IsNullOrWhiteSpace(key) && !string.IsNullOrWhiteSpace(val)) {
+                        string val = row["Value"] ?? "";
+                        if (!string.IsNullOrWhiteSpace(key)) {
                             if (double.TryParse(val, out double numVal)) dictToSave[key] = numVal;
                             else dictToSave[key] = val;
                         }
@@ -782,15 +805,22 @@ namespace OpenUtau.App.ViewModels {
                             dictNode[$"__comment_{Guid.NewGuid():N}__"] = key.TrimStart();
                             continue;
                         }
-                        string val = row["Value"];
+                        string val = row["Value"] ?? "";
                         if (string.IsNullOrWhiteSpace(key)) continue;
 
                         if (!string.IsNullOrWhiteSpace(val)) {
-                            var matches = System.Text.RegularExpressions.Regex.Matches(val, @"\""[^\""]*\""|[^ ,]+");
-                            if (matches.Count > 1 || cat.ListColumns.Contains("Value")) {
-                                dictNode[key] = matches.Cast<System.Text.RegularExpressions.Match>().Select(m => m.Value).ToList();
+                            string trimmedVal = val.Trim();
+                            bool isExplicitList = trimmedVal.StartsWith("[") && trimmedVal.EndsWith("]");
+                            
+                            var matches = System.Text.RegularExpressions.Regex.Matches(trimmedVal, @"\""[^\""]*\""|'[^']*'|[^ ,]+");
+                            
+                            if (matches.Count > 1 || isExplicitList) {
+                                dictNode[key] = matches.Cast<System.Text.RegularExpressions.Match>()
+                                                       .Select(m => m.Value.Trim('[', ']'))
+                                                       .Where(s => !string.IsNullOrWhiteSpace(s))
+                                                       .ToList();
                             } else {
-                                dictNode[key] = val;
+                                dictNode[key] = trimmedVal; 
                             }
                         } else {
                             dictNode[key] = val;
@@ -810,14 +840,23 @@ namespace OpenUtau.App.ViewModels {
 
                         var newRow = new Dictionary<string, object>();
                         foreach (var col in cat.Columns) {
-                            string val = row[col];
+                            string val = row[col] ?? "";
                             if (string.IsNullOrWhiteSpace(val)) continue;
 
-                            var matches = System.Text.RegularExpressions.Regex.Matches(val, @"\""[^\""]*\""|[^ ,]+");
-                            if (matches.Count > 1 || cat.ListColumns.Contains(col)) {
-                                newRow[col] = matches.Cast<System.Text.RegularExpressions.Match>().Select(m => m.Value).ToList();
+                            string trimmedVal = val.Trim();
+                            bool isExplicitList = trimmedVal.StartsWith("[") && trimmedVal.EndsWith("]");
+                            
+                            bool isPhonemesColumn = col.Equals("phonemes", StringComparison.OrdinalIgnoreCase);
+                            var matches = System.Text.RegularExpressions.Regex.Matches(trimmedVal, @"\""[^\""]*\""|[^ ,]+");
+                            
+                            // It becomes a list IF: multiple items, explicit brackets, OR if it is the phonemes column!
+                            if (matches.Count > 1 || isExplicitList || isPhonemesColumn) {
+                                newRow[col] = matches.Cast<System.Text.RegularExpressions.Match>()
+                                                     .Select(m => m.Value.Trim('[', ']'))
+                                                     .Where(s => !string.IsNullOrWhiteSpace(s))
+                                                     .ToList();
                             } else {
-                                newRow[col] = val;
+                                newRow[col] = trimmedVal; // Otherwise, preserve as standard string
                             }
                         }
                         if (newRow.Count > 0) rowList.Add(newRow);

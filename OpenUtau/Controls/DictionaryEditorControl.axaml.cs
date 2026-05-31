@@ -65,10 +65,20 @@ namespace OpenUtau.App.Controls {
                     if (!string.IsNullOrEmpty(colName)) {
                         string val = row[colName];
                         if (val != null && val.Contains(",")) {
-                            // Replace commas with spaces, and collapse double spaces
-                            string cleaned = val.Replace(",", " ");
-                            cleaned = System.Text.RegularExpressions.Regex.Replace(cleaned, @"\s+", " ").Trim();
                             
+                            bool inQuotes = false;
+                            var sb = new System.Text.StringBuilder();
+                            
+                            foreach (char c in val) {
+                                if (c == '"') inQuotes = !inQuotes;
+                                
+                                if (c == ',' && !inQuotes) {
+                                    sb.Append(' ');
+                                } else {
+                                    sb.Append(c);
+                                }
+                            }
+                            string cleaned = System.Text.RegularExpressions.Regex.Replace(sb.ToString(), @"\s+", " ").Trim();
                             Dispatcher.UIThread.Post(() => {
                                 row[colName] = cleaned;
                             }, DispatcherPriority.Normal);
@@ -76,7 +86,6 @@ namespace OpenUtau.App.Controls {
                     }
                 }
 
-                // Auto-delete empty rows when defocused
                 CheckAndRemoveEmptyRow(row);
             }
         }
