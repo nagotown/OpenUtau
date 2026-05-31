@@ -159,6 +159,8 @@ namespace OpenUtau.Plugin.Builtin {
             if (hasDictionary && isDictionaryLoading) {
                 return MakeSimpleResult("");
             }
+            
+            runtimeGlides.Clear();
 
             var syllables = MakeSyllables(notes, MakeEnding(prevNeighbours));
             if (syllables == null) {
@@ -166,6 +168,8 @@ namespace OpenUtau.Plugin.Builtin {
             }
 
             var phonemes = new List<Phoneme>();
+            int globalPhonemeIndex = 0; // Track the exact index for OpenUtau's UI
+
             foreach (var syllable in syllables) {
                 var modifiedSyllable = ApplyBoundaryReplacements(syllable);
                 
@@ -183,11 +187,15 @@ namespace OpenUtau.Plugin.Builtin {
                     var endingPhonemes = ProcessEnding(ending);
                     
                     if (endingPhonemes != null) {
-                        phonemes.AddRange(MakePhonemes(endingPhonemes, modifiedSyllable.duration, modifiedSyllable.position, false));
+                        phonemes.AddRange(MakePhonemes(endingPhonemes, modifiedSyllable.duration, modifiedSyllable.position, false, modifiedSyllable.tone, mainNote.phonemeAttributes, globalPhonemeIndex));
+                        globalPhonemeIndex += endingPhonemes.Count;
                     }
                     continue; 
                 }
-                phonemes.AddRange(MakePhonemes(ProcessSyllable(modifiedSyllable), modifiedSyllable.duration, modifiedSyllable.position, false));
+                
+                var syllablePhonemes = ProcessSyllable(modifiedSyllable);
+                phonemes.AddRange(MakePhonemes(syllablePhonemes, modifiedSyllable.duration, modifiedSyllable.position, false, modifiedSyllable.tone, mainNote.phonemeAttributes, globalPhonemeIndex));
+                globalPhonemeIndex += syllablePhonemes.Count;
             }
 
             if (!nextNeighbour.HasValue) {
@@ -203,13 +211,17 @@ namespace OpenUtau.Plugin.Builtin {
                     var endingPhonemes = ProcessEnding(modifiedEnding);
 
                     if (endingPhonemes != null) {
-                        phonemes.AddRange(MakePhonemes(endingPhonemes, modifiedEnding.duration, modifiedEnding.position, true));
+                        phonemes.AddRange(MakePhonemes(endingPhonemes, modifiedEnding.duration, modifiedEnding.position, true, ending.tone, mainNote.phonemeAttributes, globalPhonemeIndex));
+                        globalPhonemeIndex += endingPhonemes.Count; 
                     }
                 }
             }
 
+            var phonemesArray = phonemes.ToArray();
+            CustomParameters(notes, prev, next, prevNeighbour, nextNeighbour, prevNeighbours, phonemesArray);
+            var finalPhonemes = AssignAllAffixes(phonemesArray.ToList(), notes, prevNeighbours);
             return new Result() {
-                phonemes = AssignAllAffixes(phonemes, notes, prevNeighbours)
+                phonemes = finalPhonemes
             };
         }
 
@@ -224,11 +236,17 @@ namespace OpenUtau.Plugin.Builtin {
                 while (noteIndex < notes.Length - 1 && notes[noteIndex].position - notes[0].position < phoneme.position) {
                     noteIndex++;
                 }
-                var noteStartPosition = notes[noteIndex].position - notes[0].position;
-                int tone = (prevs != null && prevs.Length > 0 && phoneme.position < noteStartPosition) ?
-                    prevs.Last().tone : (noteIndex > 0 && phoneme.position < noteStartPosition) ?
-                    notes[noteIndex - 1].tone : notes[noteIndex].tone;
 
+                var noteStartPosition = notes[noteIndex].position - notes[0].position;
+                int tone;
+                if (phoneme.position < noteStartPosition) {
+                    tone = (noteIndex > 0) ? notes[noteIndex - 1].tone : 
+                        (prevs != null && prevs.Length > 0) ? prevs.Last().tone : 
+                        notes[noteIndex].tone;
+                } else {
+                    tone = notes[noteIndex].tone;
+                }
+                
                 var validatedAlias = phoneme.phoneme;
                 if (validatedAlias != null) {
                     validatedAlias = ValidateAliasIfNeeded(validatedAlias, tone + toneShift);
@@ -346,6 +364,7 @@ namespace OpenUtau.Plugin.Builtin {
                             vowels = backupVowels.Concat(yamlVowels).Distinct().ToArray();
 
                             tails = (tails ?? Array.Empty<string>()).Concat(data.symbols?.Where(s => s.type == "tail").Select(s => s.symbol) ?? Array.Empty<string>()).Distinct().ToArray();
+                            enableGlides = data?.isglides ?? true;
                             
                             fricative = data.symbols?.Where(s => s.type == "fricative").Select(s => s.symbol).Distinct().ToArray() ?? Array.Empty<string>();
                             aspirate = data.symbols?.Where(s => s.type == "aspirate").Select(s => s.symbol).Distinct().ToArray() ?? Array.Empty<string>();
@@ -375,7 +394,7 @@ namespace OpenUtau.Plugin.Builtin {
                                 foreach (var replacement in data.replacements) {
                                     string ruleScope = string.IsNullOrEmpty(replacement.where) ? "inside" : replacement.where.ToLowerInvariant();
                                     if (replacement.from is IEnumerable<object> fromList) {
-                                        string[] fromArray = fromList.Select(item => item.ToString()).ToArray();
+                                        string[] fromArray = fromList.Select(item => item.ToString() ?? "null").ToArray();
                                         if (replacement.to is string toString) mergingReplacements.Add(new Replacement { from = fromArray, to = toString, where = ruleScope });
                                         else if (replacement.to is IEnumerable<object> toList) splittingReplacements.Add(new Replacement { from = fromArray, to = toList.Select(item => item.ToString()).ToArray(), where = ruleScope });
                                     } else if (replacement.from is string fromString) {
@@ -418,6 +437,20 @@ namespace OpenUtau.Plugin.Builtin {
         private string error = "";
         private readonly string[] wordSeparators = new[] { " ", "_" };
         private readonly string[] wordSeparator = new[] { "  " };
+
+        /// <summary>
+        /// A tracker to identify which phonemes were marked as glides dynamically.
+        /// </summary>
+        protected HashSet<string> runtimeGlides = new HashSet<string>();
+
+        /// <summary>
+        /// Flag a specific generated string as a glide during your ProcessSyllable / ProcessEnding loops.
+        /// </summary>
+        protected void glides(string alias) {
+            runtimeGlides.Add(alias);
+        }
+
+        protected bool enableGlides = true;
 
         /// <summary>
         /// Returns list of vowels
@@ -488,7 +521,6 @@ namespace OpenUtau.Plugin.Builtin {
                 foreach (var subword in note.lyric.Trim().ToLowerInvariant().Split(wordSeparators, StringSplitOptions.RemoveEmptyEntries)) {
                     var subResult = dictionary.Query(subword);
                     if (subResult == null) {
-                        Log.Warning($"Subword '{subword}' from word '{note.lyric}' can't be found in the dictionary");
                         subResult = HandleWordNotFound(note);
                         if (subResult == null) {
                             return null;
@@ -510,6 +542,16 @@ namespace OpenUtau.Plugin.Builtin {
                 return getSymbolsRaw(note.lyric);
             }
         }
+
+        /// <summary>
+        /// Defines whether a consonant (like a liquid or semi-vowel etc) should be placed ON the note (anchor)
+        /// instead of pushing backward. Will return true if dynamically flagged using glides() or TryAddPhoneme().
+        /// </summary>
+        protected virtual bool IsGlide(string alias) {
+            return runtimeGlides.Contains(alias) && enableGlides;
+        }
+
+        protected virtual bool NoGap => true;
 
         /// <summary>
         /// Instead of changing symbols in cmudict itself for each reclist, 
@@ -746,6 +788,38 @@ namespace OpenUtau.Plugin.Builtin {
         }
 
         /// <summary>
+        /// Uses Preutterance length
+        /// </summary>
+        protected virtual double GetTransitionBasicLengthMs(string alias, int tone, PhonemeAttributes attr) {
+            return GetTransitionBasicLengthMs(alias);
+        }
+
+        /// <summary>
+        /// OTO HELPER: Calculates transition length based on the mapped Oto's Preutterance.
+        /// </summary>
+        protected double GetTransitionBasicLengthMsByOto(string alias, int tone = 0, PhonemeAttributes attr = default) {
+            if (string.IsNullOrEmpty(alias)) return GetTransitionBasicLengthMsByConstant();
+
+            string color = attr.voiceColor ?? string.Empty;
+            string alt = attr.alternate?.ToString() ?? string.Empty;
+            int toneShift = attr.toneShift;
+            
+            var validatedAlias = ValidateAliasIfNeeded(alias, tone + toneShift);
+            var mappedAlias = MapPhoneme(validatedAlias, tone + toneShift, color, alt, singer);
+
+            if (singer.TryGetMappedOto(mappedAlias, tone + toneShift, out var oto)) {
+                // If overlap is negative, add that absolute duration to the preutterance 
+                // to ensure the entire consonant timing is preserved.
+                if (oto.Overlap < 0) {
+                    return oto.Preutter - oto.Overlap;
+                }
+                return oto.Preutter; 
+            }
+
+            return GetTransitionBasicLengthMsByConstant();
+        }
+
+        /// <summary>
         /// a note length modifier, from 1 to 0.3. Used to make transition notes shorter on high tempo
         /// </summary>
         /// <returns></returns>
@@ -812,6 +886,14 @@ namespace OpenUtau.Plugin.Builtin {
         }
 
         /// <summary>
+        /// Native API for child phonemizers to automatically apply expressions (vel, alt, clr, etc.)
+        /// This is called internally after all phonemes are generated and aligned, right before returning to the engine.
+        /// </summary>
+        protected virtual void CustomParameters(Note[] notes, Note? prev, Note? next, Note? prevNeighbour, Note? nextNeighbour, Note[] prevNeighbours, Phoneme[] phonemes) {
+            // Base implementation does nothing. Child classes override this to implement custom logic.
+        }
+
+        /// <summary>
         /// Checks if mapped and validated alias exists in oto
         /// </summary>
         /// <param name="alias"></param>
@@ -832,6 +914,20 @@ namespace OpenUtau.Plugin.Builtin {
             foreach (var phoneme in targetPhonemes) {
                 if (HasOto(phoneme, tone)) {
                     sourcePhonemes.Add(phoneme);
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Appends a phoneme and optionally marks it as a glide simultaneously.
+        /// </summary>
+        protected bool TryAddPhoneme(List<string> sourcePhonemes, int tone, bool isGlide, params string[] targetPhonemes) {
+            foreach (var phoneme in targetPhonemes) {
+                if (HasOto(phoneme, tone)) {
+                    sourcePhonemes.Add(phoneme);
+                    if (isGlide) glides(phoneme);
                     return true;
                 }
             }
@@ -896,6 +992,7 @@ namespace OpenUtau.Plugin.Builtin {
 
         public class YAMLData {
             public string version { get; set; }
+            public bool? isglides { get; set; }
             public SymbolData[] symbols { get; set; } = Array.Empty<SymbolData>();
             public Replacement[] replacements { get; set; } = Array.Empty<Replacement>();
             public Fallbacks[] fallbacks { get; set; } = Array.Empty<Fallbacks>();
@@ -914,7 +1011,7 @@ namespace OpenUtau.Plugin.Builtin {
             public List<string> FromList {
                 get {
                     if (from is string s) return new List<string> { s };
-                    if (from is IEnumerable<object> list) return list.Select(x => x.ToString()).ToList();
+                    if (from is IEnumerable<object> list) return list.Select(x => x.ToString() ?? "null").ToList();
                     return new List<string>();
                 }
             }
@@ -922,7 +1019,7 @@ namespace OpenUtau.Plugin.Builtin {
             public List<string> ToList {
                 get {
                     if (to is string s) return new List<string> { s };
-                    if (to is IEnumerable<object> list) return list.Select(x => x.ToString()).ToList();
+                    if (to is IEnumerable<object> list) return list.Select(x => x.ToString() ?? "null").ToList();
                     return new List<string>();
                 }
             }
@@ -1007,7 +1104,7 @@ namespace OpenUtau.Plugin.Builtin {
 
                     if (fromArray != null && fromArray.Length > 0 && idx + fromArray.Length <= inputPhonemes.Count) {
                         bool match = true;
-                        var captures = new Dictionary<string, Queue<string>>();
+                        var captures = new Dictionary<string, List<string>>();
                         
                         for (int j = 0; j < fromArray.Length; j++) {
                             string rulePh = fromArray[j];
@@ -1015,8 +1112,8 @@ namespace OpenUtau.Plugin.Builtin {
                             
                             if (IsGroupKeyword(rulePh)) {
                                 if (IsGroupMatch(rulePh, actualPh)) {
-                                    if (!captures.ContainsKey(rulePh)) captures[rulePh] = new Queue<string>();
-                                    captures[rulePh].Enqueue(actualPh);
+                                    if (!captures.ContainsKey(rulePh)) captures[rulePh] = new List<string>();
+                                    captures[rulePh].Add(actualPh);
                                 } else {
                                     match = false; break;
                                 }
@@ -1036,8 +1133,19 @@ namespace OpenUtau.Plugin.Builtin {
                             }
 
                             if (toArray != null) {
+                                var captureIndices = new Dictionary<string, int>();
+                                
                                 foreach (string toPh in toArray) {
-                                    finalPhonemes.Add(IsGroupKeyword(toPh) && captures.ContainsKey(toPh) && captures[toPh].Count > 0 ? captures[toPh].Dequeue() : toPh);
+                                    if (IsGroupKeyword(toPh) && captures.ContainsKey(toPh) && captures[toPh].Count > 0) {
+                                        if (!captureIndices.ContainsKey(toPh)) captureIndices[toPh] = 0;
+                                        int cIdx = captureIndices[toPh];
+                                        if (cIdx >= captures[toPh].Count) cIdx = captures[toPh].Count - 1;
+                                        
+                                        finalPhonemes.Add(captures[toPh][cIdx]);
+                                        captureIndices[toPh]++;
+                                    } else {
+                                        finalPhonemes.Add(toPh);
+                                    }
                                 }
                             }
                             
@@ -1096,11 +1204,12 @@ namespace OpenUtau.Plugin.Builtin {
             bool hasPrevV = !string.IsNullOrEmpty(syllable.prevV);
             bool hasV = !string.IsNullOrEmpty(syllable.v);
 
-            if (hasPrevV) currentPhonemes.Add(syllable.prevV);
+            currentPhonemes.Add(hasPrevV ? syllable.prevV : "null");
+            
             if (syllable.cc != null) currentPhonemes.AddRange(syllable.cc);
             if (hasV) currentPhonemes.Add(syllable.v);
 
-            bool isBoundary = hasPrevV && syllable.position == 0;
+            bool isBoundary = (hasPrevV && syllable.position == 0) || !hasPrevV;
             List<string> finalPhonemes = ApplyReplacements(currentPhonemes, isBoundary);
 
             string newPrevV = "";
@@ -1108,8 +1217,13 @@ namespace OpenUtau.Plugin.Builtin {
             List<string> newCc = new List<string>();
 
             if (finalPhonemes.Count > 0) {
-                if (hasPrevV) {
-                    newPrevV = finalPhonemes[0];
+                string firstPh = finalPhonemes[0];
+                
+                if (firstPh == "null") {
+                    newPrevV = "";
+                    finalPhonemes.RemoveAt(0);
+                } else {
+                    newPrevV = firstPh;
                     finalPhonemes.RemoveAt(0);
                 }
                 if (hasV && finalPhonemes.Count > 0) {
@@ -1142,8 +1256,7 @@ namespace OpenUtau.Plugin.Builtin {
 
             List<string> currentPhonemes = new List<string>();
             bool hasPrevV = !string.IsNullOrEmpty(ending.prevV);
-
-            if (hasPrevV) currentPhonemes.Add(ending.prevV);
+            currentPhonemes.Add(hasPrevV ? ending.prevV : "null");
             if (ending.cc != null) currentPhonemes.AddRange(ending.cc);
 
             List<string> finalPhonemes = ApplyReplacements(currentPhonemes, true);
@@ -1152,8 +1265,12 @@ namespace OpenUtau.Plugin.Builtin {
             List<string> newCc = new List<string>();
 
             if (finalPhonemes.Count > 0) {
-                if (hasPrevV) {
-                    newPrevV = finalPhonemes[0];
+                string firstPh = finalPhonemes[0];
+                if (firstPh == "null") {
+                    newPrevV = "";
+                    finalPhonemes.RemoveAt(0);
+                } else {
+                    newPrevV = firstPh;
                     finalPhonemes.RemoveAt(0);
                 }
                 newCc.AddRange(finalPhonemes);
@@ -1254,33 +1371,82 @@ namespace OpenUtau.Plugin.Builtin {
             }
             return vowelIds;
         }
-
-        private Phoneme[] MakePhonemes(List<string> phonemeSymbols, int containerLength, int position, bool isEnding) {
-
+        
+        private Phoneme[] MakePhonemes(List<string> phonemeSymbols, int containerLength, int position, bool isEnding, int tone = 0, PhonemeAttributes[] attributes = null, int globalStartIndex = 0) {
             var phonemes = new Phoneme[phonemeSymbols.Count];
-            for (var i = 0; i < phonemeSymbols.Count; i++) {
-                var phonemeI = phonemeSymbols.Count - i - 1;
+            
+            int[] trueLengths = new int[phonemeSymbols.Count];
+            for (int i = 1; i < phonemeSymbols.Count; i++) {
+                var prevPhonemeI = phonemeSymbols.Count - i;
+                var nextGlobalIndex = globalStartIndex + prevPhonemeI;
+                var nextPAttr = attributes?.FirstOrDefault(a => a.index == nextGlobalIndex) ?? default;
+                double nextStretch = nextPAttr.consonantStretchRatio ?? 1.0;
+                
+                string nextAlias = phonemeSymbols[prevPhonemeI];
+                double baseLengthMs = GetTransitionBasicLengthMs(nextAlias, tone, nextPAttr);
+                trueLengths[i] = MsToTick(baseLengthMs * nextStretch);
+            }
 
-                var validatedAlias = phonemeSymbols[phonemeI];
-                if (validatedAlias != null) {
-                    phonemes[phonemeI].phoneme = validatedAlias;
-                    var transitionLengthTick = MsToTick(GetTransitionBasicLengthMs(phonemes[phonemeI].phoneme));
-                    if (i == 0) {
-                        if (!isEnding) {
-                            transitionLengthTick = 0;
-                        } else {
-                            transitionLengthTick *= 2;
-                        }
+            // IsGlide
+            int anchorI = 0;
+            if (!isEnding) {
+                for (int i = 1; i < phonemeSymbols.Count; i++) {
+                    var phonemeI = phonemeSymbols.Count - i - 1;
+                    if (phonemeSymbols[phonemeI] != null && IsGlide(phonemeSymbols[phonemeI])) {
+                        anchorI = i;
+                    } else {
+                        break;
                     }
-                    // yet it's actually a length; will became position in ScalePhonemes
-                    phonemes[phonemeI].position = transitionLengthTick;
-                } else {
-                    phonemes[phonemeI].phoneme = null;
-                    phonemes[phonemeI].position = 0;
                 }
             }
 
-            return ScalePhonemes(phonemes, position, isEnding ? phonemeSymbols.Count : phonemeSymbols.Count - 1, containerLength);
+            for (var i = 0; i < phonemeSymbols.Count; i++) {
+                var phonemeI = phonemeSymbols.Count - i - 1;
+                var globalIndex = globalStartIndex + phonemeI;
+                var validatedAlias = phonemeSymbols[phonemeI];
+
+                if (validatedAlias != null) {
+                    phonemes[phonemeI] = new Phoneme {
+                        phoneme = validatedAlias,
+                        index = globalIndex 
+                    };
+                    
+                    if (i == 0) {
+                        if (isEnding) {
+                            var pAttr = attributes?.FirstOrDefault(a => a.index == globalIndex) ?? default;
+                            double baseLengthMs = GetTransitionBasicLengthMs(phonemes[phonemeI].phoneme, tone, pAttr);
+                            
+                            if (NoGap) {
+                                // Snapped mode: Use a visible 50-tick anchor capped at 1/3 of the note
+                                int targetTicks = 50; 
+                                int maxAllowed = containerLength / 3;
+                                phonemes[phonemeI].position = System.Math.Min(targetTicks, maxAllowed);
+                            } else {
+                                // Natural mode: Use the full Preutterance
+                                phonemes[phonemeI].position = MsToTick(baseLengthMs);
+                            }
+                        } else {
+                            int sum = 0;
+                            for (int k = 1; k <= anchorI; k++) {
+                                sum += trueLengths[k];
+                            }
+                            phonemes[phonemeI].position = -sum;
+                        }
+                    } else {
+                        // VC transitions keep their full stretched length
+                        phonemes[phonemeI].position = trueLengths[i];
+                    }
+                } else {
+                    // Initialize empty slots properly to avoid null crashes
+                    phonemes[phonemeI] = new Phoneme {
+                        phoneme = null,
+                        position = 0,
+                        index = globalIndex
+                    };
+                }
+            }
+            
+            return ScalePhonemes(phonemes, position, isEnding ? phonemeSymbols.Count - 1 : phonemeSymbols.Count - 1, containerLength);
         }
 
         private string ValidateAliasIfNeeded(string alias, int tone) {
@@ -1292,18 +1458,23 @@ namespace OpenUtau.Plugin.Builtin {
 
         private Phoneme[] ScalePhonemes(Phoneme[] phonemes, int startPosition, int phonemesCount, int containerLengthTick = -1) {
             var offset = 0;
-            // reserved length for prev vowel, double length of a transition;
-            var containerSafeLengthTick = MsToTick(GetTransitionBasicLengthMsByConstant() * 2);
             var lengthModifier = 1.0;
+
             if (containerLengthTick > 0) {
                 var allTransitionsLengthTick = phonemes.Sum(n => n.position);
-                if (allTransitionsLengthTick + containerSafeLengthTick > containerLengthTick) {
-                    lengthModifier = (double)containerLengthTick / (allTransitionsLengthTick + containerSafeLengthTick);
+
+                // Instead of a fixed "Constant * 2", use a proportional limit.
+                // This allows transitions to occupy up to 80% of the note.
+                var maxAllowedConsonantTick = (int)(containerLengthTick * 0.8);
+
+                if (allTransitionsLengthTick > maxAllowedConsonantTick) {
+                    lengthModifier = (double)maxAllowedConsonantTick / allTransitionsLengthTick;
                 }
             }
 
             for (var i = phonemes.Length - 1; i >= 0; i--) {
-                var finalLengthTick = (int)(phonemes[i].position * lengthModifier) / 5 * 5;
+                if (phonemes[i].phoneme == null) continue;
+                var finalLengthTick = (int)(phonemes[i].position * lengthModifier);
                 phonemes[i].position = startPosition - finalLengthTick - offset;
                 offset += finalLengthTick;
             }
